@@ -1,15 +1,18 @@
-# Shutdown Timer Widget
+# <img src="assets/icon.png" width="48" height="48" valign="middle"> Shutdown Timer Widget
 
-Um widget timer flutuante, elegante e minimalista para macOS, Windows e Linux, desenhado com estilo premium (glassmorphism/translucidez) para agendar o desligamento do computador.
+Um widget timer flutuante, elegante e minimalista para macOS, Windows e Linux, desenhado com estilo nativo (glassmorphism/translucidez) para agendar o desligamento do computador.
 
 [![GitHub Repository](https://img.shields.io/badge/GitHub-Repository-blue?style=flat-square&logo=github)](https://github.com/arjosweb/shutdown-timer-widget)
+![Electron](https://img.shields.io/badge/Electron-47848F?style=flat-square&logo=electron&logoColor=white)
+![TypeScript](https://img.shields.io/badge/TypeScript-007ACC?style=flat-square&logo=typescript&logoColor=white)
+![Node.js](https://img.shields.io/badge/Node.js-43853D?style=flat-square&logo=node.js&logoColor=white)
 
 ![Screenshot](screenshot.png)
 
 ## Funcionalidades
 
 - **Design Premium**: Interface moderna com efeito de vidro (blur), transparência e bordas suaves.
-- **Multiplataforma**: Suporte nativo para macOS, Windows e Linux.
+- **Multiplataforma**: Suporte nativo para macOS. Versões Windows e Linux em estágio *(Beta)*.
 - **Timer Visual**: Contagem regressiva clara com hora estimada de desligamento.
 - **Controles**: Iniciar, Parar, Reiniciar e Desligar Agora.
 - **Inputs Livres**: Defina horas, minutos e segundos conforme necessário.
@@ -50,11 +53,11 @@ Para gerar as versões de distribuição para diferentes plataformas:
   ```bash
   npm run pack:mac
   ```
-- **Windows (.exe portable)**:
+- **Windows (.exe portable)**: *(Beta)*
   ```bash
   npm run pack:win
   ```
-- **Linux (AppImage / .deb)**:
+- **Linux (AppImage / .deb)**: *(Beta)*
   ```bash
   npm run pack:linux
   ```

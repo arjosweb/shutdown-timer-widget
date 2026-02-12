@@ -1,7 +1,7 @@
 {
   "name": "shutdown-timer-widget",
   "version": "1.0.0",
-  "description": "macOS Shutdown Timer Widget - Widget flutuante para agendamento de desligamento",
+  "description": "Shutdown Timer Widget - Widget flutuante para agendamento de desligamento",
   "main": "out/main.js",
   "scripts": {
     "start": "npm run build && env ELECTRON_RUN_AS_NODE= electron .",
@@ -17,11 +17,27 @@
     "mac": {
       "target": "dmg",
       "category": "public.app-category.utilities",
-      "icon": "assets/icon.icns"
+      "icon": "assets/icon.png"
+    },
+    "dmg": {
+      "iconSize": 100,
+      "contents": [
+        {
+          "x": 130,
+          "y": 220,
+          "type": "file"
+        },
+        {
+          "x": 410,
+          "y": 220,
+          "type": "link",
+          "path": "/Applications"
+        }
+      ]
     },
     "win": {
       "target": "portable",
-      "icon": "assets/icon.ico"
+      "icon": "assets/icon.png"
     },
     "linux": {
       "target": [
