@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Shutdown Timer</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@200;300;400;500;600;700&display=swap"
+        rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap"
+        rel="stylesheet">
+    <link rel="stylesheet" href="styles.css">
+</head>
+
+<body>
+    <div class="widget-container">
+        <!-- Title Bar (draggable) -->
+        <div class="title-bar">
+            <div class="window-controls">
+                <div class="window-btn close" id="btn-close"></div>
+                <div class="window-btn minimize-dot" id="btn-minimize-dot"></div>
+            </div>
+            <div class="title-label">TIMER</div>
+            <div class="title-spacer"></div>
+        </div>
+
+        <!-- Timer Display -->
+        <div class="timer-display">
+            <div class="timer-label">TIME REMAINING</div>
+            <div class="timer-value" id="timer-value">00:00:00</div>
+            <div class="timer-event" id="timer-event">Irá desligar às --:--</div>
+        </div>
+
+        <!-- Action Buttons -->
+        <div class="action-buttons">
+            <button class="action-btn restart-btn" id="btn-restart">
+                <span class="material-symbols-outlined">restart_alt</span>
+                <span class="btn-label">Restart</span>
+            </button>
+            <button class="action-btn shutdown-btn" id="btn-shutdown">
+                <span class="material-symbols-outlined">power_settings_new</span>
+                <span class="btn-label">Shutdown</span>
+            </button>
+        </div>
+
+        <!-- Time Inputs -->
+        <div class="time-inputs">
+            <div class="input-group">
+                <label class="input-label">Hours</label>
+                <input type="number" class="time-input" id="input-hours" min="0" max="23" value="01">
+            </div>
+            <div class="input-group">
+                <label class="input-label">Minutes</label>
+                <input type="number" class="time-input" id="input-minutes" min="0" max="59" value="45">
+            </div>
+            <div class="input-group">
+                <label class="input-label">Seconds</label>
+                <input type="number" class="time-input" id="input-seconds" min="0" max="59" value="00">
+            </div>
+        </div>
+
+        <!-- Bottom Controls -->
+        <div class="bottom-controls">
+            <button class="ctrl-btn secondary" id="btn-minimize">Minimizar</button>
+            <button class="ctrl-btn primary" id="btn-start">
+                <span id="btn-start-text">Iniciar</span>
+            </button>
+        </div>
+    </div>
+
+    <script src="renderer.js"></script>
+</body>
+
+</html>

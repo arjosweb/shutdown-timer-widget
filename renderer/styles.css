@@ -1,0 +1,380 @@
+/* ── Reset & Base ──────────────────────────────── */
+*,
+*::before,
+*::after {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+:root {
+  --primary: #2b6cee;
+  --primary-glow: rgba(43, 108, 238, 0.4);
+  --glass-bg: rgba(30, 30, 30, 0.45);
+  --glass-border: rgba(255, 255, 255, 0.12);
+  --glass-border-subtle: rgba(255, 255, 255, 0.08);
+  --glass-inset: rgba(255, 255, 255, 0.05);
+  --input-bg: rgba(0, 0, 0, 0.25);
+  --text-primary: #ffffff;
+  --text-secondary: rgba(255, 255, 255, 0.7);
+  --text-muted: rgba(255, 255, 255, 0.4);
+  --text-dim: rgba(255, 255, 255, 0.3);
+  --surface-hover: rgba(255, 255, 255, 0.1);
+  --surface-subtle: rgba(255, 255, 255, 0.05);
+  --danger: #FF5F57;
+  --warning: #FEBC2E;
+  --success: #28C840;
+}
+
+html,
+body {
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  background: transparent;
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+  color: var(--text-primary);
+  user-select: none;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* ── Widget Container (Glass Panel) ────────────── */
+.widget-container {
+  width: 380px;
+  height: 100%;
+  background: var(--glass-bg);
+  backdrop-filter: blur(24px);
+  -webkit-backdrop-filter: blur(24px);
+  border: none;
+  border-radius: 10px;
+  padding: 24px;
+  box-shadow:
+    0 20px 50px rgba(0, 0, 0, 0.5),
+    inset 0 0 0 1px var(--glass-inset);
+  display: flex;
+  flex-direction: column;
+  position: relative;
+  -webkit-app-region: drag;
+}
+
+/* ── Title Bar ─────────────────────────────────── */
+.title-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 32px;
+}
+
+.window-controls {
+  display: flex;
+  gap: 8px;
+  -webkit-app-region: no-drag;
+}
+
+.window-btn {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  cursor: pointer;
+  transition: filter 0.15s ease;
+  border: 1px solid rgba(0, 0, 0, 0.1);
+}
+
+.window-btn:hover {
+  filter: brightness(1.1);
+}
+
+.window-btn.close {
+  background-color: var(--danger);
+}
+
+.window-btn.minimize-dot {
+  background-color: var(--warning);
+}
+
+.window-btn.maximize {
+  background-color: var(--success);
+}
+
+.title-label {
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.title-spacer {
+  width: 40px;
+}
+
+/* ── Timer Display ──────────────────────────────── */
+.timer-display {
+  background: var(--input-bg);
+  border: 1px solid var(--glass-border-subtle);
+  border-radius: 16px;
+  padding: 20px;
+  margin-bottom: 24px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  transition: border-color 0.3s ease;
+}
+
+.timer-display.active {
+  border-color: rgba(43, 108, 238, 0.3);
+}
+
+.timer-label {
+  font-size: 10px;
+  font-weight: 500;
+  color: rgba(43, 108, 238, 0.8);
+  text-transform: uppercase;
+  letter-spacing: 0.15em;
+  margin-bottom: 4px;
+}
+
+.timer-value {
+  font-size: 48px;
+  font-weight: 200;
+  letter-spacing: -0.02em;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-primary);
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
+  line-height: 1.2;
+  transition: color 0.3s ease;
+}
+
+.timer-value.running {
+  color: var(--primary);
+}
+
+.timer-value.warning {
+  color: var(--danger);
+  animation: pulse-warning 1s ease-in-out infinite;
+}
+
+@keyframes pulse-warning {
+
+  0%,
+  100% {
+    opacity: 1;
+  }
+
+  50% {
+    opacity: 0.6;
+  }
+}
+
+.timer-event {
+  font-size: 10px;
+  font-weight: 500;
+  color: var(--text-dim);
+  margin-top: 8px;
+}
+
+/* ── Action Buttons ─────────────────────────────── */
+.action-buttons {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+  margin-bottom: 24px;
+}
+
+.action-btn {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 12px;
+  border-radius: 12px;
+  border: 1px solid;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  background: none;
+  font-family: inherit;
+  -webkit-app-region: no-drag;
+}
+
+.action-btn:active {
+  transform: scale(0.97);
+}
+
+.action-btn .material-symbols-outlined {
+  font-size: 18px;
+  margin-bottom: 4px;
+  transition: color 0.2s ease;
+}
+
+.action-btn .btn-label {
+  font-size: 10px;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: -0.02em;
+}
+
+/* Restart Button */
+.restart-btn {
+  background-color: var(--surface-subtle);
+  border-color: rgba(255, 255, 255, 0.1);
+  color: var(--text-primary);
+}
+
+.restart-btn .material-symbols-outlined {
+  color: var(--text-secondary);
+}
+
+.restart-btn:hover {
+  background-color: var(--surface-hover);
+}
+
+.restart-btn:hover .material-symbols-outlined {
+  color: var(--text-primary);
+}
+
+/* Shutdown Button */
+.shutdown-btn {
+  background-color: rgba(43, 108, 238, 0.2);
+  border-color: rgba(43, 108, 238, 0.3);
+  color: var(--primary);
+}
+
+.shutdown-btn .material-symbols-outlined {
+  color: var(--primary);
+}
+
+.shutdown-btn:hover {
+  background-color: rgba(43, 108, 238, 0.3);
+}
+
+/* ── Time Inputs ────────────────────────────────── */
+.time-inputs {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 32px;
+}
+
+.input-group {
+  flex: 1;
+}
+
+.input-label {
+  display: block;
+  font-size: 10px;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  font-weight: 600;
+  margin-bottom: 6px;
+  margin-left: 4px;
+}
+
+.time-input {
+  width: 100%;
+  background: var(--input-bg);
+  border: 1px solid var(--glass-border-subtle);
+  border-radius: 8px;
+  padding: 8px 12px;
+  text-align: center;
+  font-size: 14px;
+  font-family: 'Inter', sans-serif;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-primary);
+  outline: none;
+  transition: all 0.2s ease;
+  -webkit-app-region: no-drag;
+  -moz-appearance: textfield;
+}
+
+.time-input::-webkit-inner-spin-button,
+.time-input::-webkit-outer-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+
+.time-input:focus {
+  border-color: rgba(43, 108, 238, 0.5);
+  box-shadow: 0 0 0 2px rgba(43, 108, 238, 0.15);
+}
+
+.time-input:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+/* ── Bottom Controls ────────────────────────────── */
+.bottom-controls {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+
+.ctrl-btn {
+  width: 100%;
+  padding: 14px;
+  border-radius: 12px;
+  font-weight: 500;
+  font-size: 12px;
+  font-family: 'Inter', sans-serif;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  border: 1px solid;
+  -webkit-app-region: no-drag;
+}
+
+.ctrl-btn:active {
+  transform: scale(0.98);
+}
+
+.ctrl-btn.secondary {
+  color: var(--text-secondary);
+  background: var(--surface-subtle);
+  border-color: rgba(255, 255, 255, 0.05);
+}
+
+.ctrl-btn.secondary:hover {
+  color: var(--text-primary);
+  background: var(--surface-hover);
+}
+
+.ctrl-btn.primary {
+  color: var(--text-primary);
+  background: var(--primary);
+  border-color: rgba(255, 255, 255, 0.1);
+  font-weight: 600;
+  box-shadow: 0 0 25px var(--primary-glow);
+}
+
+.ctrl-btn.primary:hover {
+  background: rgba(43, 108, 238, 0.9);
+}
+
+.ctrl-btn.primary.active {
+  background: var(--danger);
+  box-shadow: 0 0 25px rgba(255, 95, 87, 0.4);
+}
+
+.ctrl-btn.primary.active:hover {
+  background: rgba(255, 95, 87, 0.9);
+}
+
+/* ── Scrollbar ──────────────────────────────────── */
+::-webkit-scrollbar {
+  width: 4px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 10px;
+}
+
+/* ── Selection ──────────────────────────────────── */
+::selection {
+  background-color: rgba(43, 108, 238, 0.5);
+}

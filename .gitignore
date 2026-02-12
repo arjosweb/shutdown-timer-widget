@@ -1,0 +1,9 @@
+node_modules/
+dist/
+.DS_Store
+*.dmg
+.idea
+.idea/**
+dev
+out
+out/**
