@@ -151,8 +151,10 @@ function setupTimerEvents() {
         }
 
         // Notificação nos últimos 30 segundos (ou no início se o total configurado for menor que 30s)
-        const shouldNotify = (timer.totalSeconds >= 30 && seconds === 30) ||
-                             (timer.totalSeconds < 30 && seconds === timer.totalSeconds);
+        const shouldNotify = seconds > 0 && (
+            (timer.totalSeconds >= 30 && seconds === 30) ||
+            (timer.totalSeconds < 30 && seconds === timer.totalSeconds)
+        );
         if (shouldNotify) {
             new Notification({
                 title: 'Shutdown Timer',
