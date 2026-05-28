@@ -1,6 +1,6 @@
 {
   "name": "shutdown-timer-widget",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Shutdown Timer Widget - Widget flutuante para agendamento de desligamento",
   "main": "out/main.js",
   "scripts": {

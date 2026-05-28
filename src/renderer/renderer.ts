@@ -26,6 +26,7 @@ if (!widgetAPI) {
 const timerValueEl = document.getElementById('timer-value') as HTMLElement;
 const timerEventEl = document.getElementById('timer-event') as HTMLElement;
 const timerDisplayEl = document.querySelector('.timer-display') as HTMLElement;
+const statusBadge = document.getElementById('status-badge') as HTMLElement;
 
 const inputHours = document.getElementById('input-hours') as HTMLInputElement;
 const inputMinutes = document.getElementById('input-minutes') as HTMLInputElement;
@@ -40,8 +41,9 @@ const btnClose = document.getElementById('btn-close') as HTMLElement;
 const btnMinimizeDot = document.getElementById('btn-minimize-dot') as HTMLElement;
 
 // ── State ─────────────────────────────────────────
-let currentState = 'idle'; // idle, running, paused
+let currentState = 'idle'; // idle, running, paused, canceling
 let totalConfiguredSeconds = 0;
+let isCanceling = false;
 
 // ── Helpers ───────────────────────────────────────
 function formatTime(totalSeconds: number): string {
@@ -85,12 +87,23 @@ function updateUIState(state: string): void {
     if (state === 'running') {
         btnStartText.textContent = 'Parar';
         btnStart.classList.add('active');
+        (btnStart as HTMLButtonElement).disabled = false;
         timerDisplayEl.classList.add('active');
         timerValueEl.classList.add('running');
         setInputsDisabled(true);
+        
+        statusBadge.textContent = 'Agendado';
+        statusBadge.className = 'status-badge success';
+    } else if (state === 'canceling') {
+        btnStartText.textContent = 'Cancelando...';
+        (btnStart as HTMLButtonElement).disabled = true;
+        
+        statusBadge.textContent = 'Cancelando';
+        statusBadge.className = 'status-badge loading';
     } else {
         btnStartText.textContent = 'Iniciar';
         btnStart.classList.remove('active');
+        (btnStart as HTMLButtonElement).disabled = false;
         timerDisplayEl.classList.remove('active');
         timerValueEl.classList.remove('running');
         timerValueEl.classList.remove('warning');
@@ -98,6 +111,7 @@ function updateUIState(state: string): void {
 
         if (state === 'idle') {
             timerEventEl.textContent = 'Irá desligar às --:--';
+            statusBadge.className = 'status-badge hidden';
         }
     }
 }
@@ -126,9 +140,16 @@ function updateEventPreview() {
         if (seconds > 0) {
             timerEventEl.textContent = calculateShutdownTime(seconds);
             timerValueEl.textContent = formatTime(seconds);
+            if (seconds < 10) {
+                statusBadge.textContent = 'Min: 10s';
+                statusBadge.className = 'status-badge loading';
+            } else {
+                statusBadge.className = 'status-badge hidden';
+            }
         } else {
             timerEventEl.textContent = 'Irá desligar às --:--';
             timerValueEl.textContent = '00:00:00';
+            statusBadge.className = 'status-badge hidden';
         }
     }
 }
@@ -141,25 +162,51 @@ if (inputSeconds) inputSeconds.addEventListener('input', updateEventPreview);
 if (btnStart) btnStart.addEventListener('click', async () => {
     if (currentState === 'idle') {
         const seconds = getInputSeconds();
-        if (seconds <= 0) return;
+        if (seconds < 10) {
+            timerEventEl.textContent = 'Tempo mínimo de 10s';
+            statusBadge.textContent = 'Erro';
+            statusBadge.className = 'status-badge error';
+            setTimeout(updateEventPreview, 3000);
+            return;
+        }
 
         totalConfiguredSeconds = seconds;
         timerEventEl.textContent = calculateShutdownTime(seconds);
+        
+        statusBadge.textContent = 'Aguarde...';
+        statusBadge.className = 'status-badge loading';
+        (btnStart as HTMLButtonElement).disabled = true;
 
         const result = await widgetAPI.startTimer(seconds);
         if (!result.success) {
             timerEventEl.textContent = `Erro: ${result.error || 'permissão negada'}`;
+            statusBadge.textContent = 'Erro';
+            statusBadge.className = 'status-badge error';
+            (btnStart as HTMLButtonElement).disabled = false;
             setTimeout(() => {
-                timerEventEl.textContent = 'Irá desligar às --:--';
+                updateEventPreview();
             }, 5000);
+        } else {
+            statusBadge.textContent = 'Agendado';
+            statusBadge.className = 'status-badge success';
         }
     } else if (currentState === 'running') {
+        isCanceling = true;
+        updateUIState('canceling');
+        
         const result = await widgetAPI.stopTimer();
+        
+        isCanceling = false;
         if (!result.success) {
             timerEventEl.textContent = 'Erro ao cancelar';
+            statusBadge.textContent = 'Erro';
+            statusBadge.className = 'status-badge error';
             setTimeout(() => {
-                timerEventEl.textContent = 'Irá desligar às --:--';
+                updateUIState('running');
             }, 3000);
+        } else {
+            updateUIState('idle');
+            updateEventPreview();
         }
     }
 });
@@ -202,6 +249,7 @@ widgetAPI.onTick((seconds: number) => {
 });
 
 widgetAPI.onStateChange((state: string) => {
+    if (isCanceling && state === 'idle') return;
     updateUIState(state);
 });
 
@@ -209,6 +257,7 @@ widgetAPI.onComplete(() => {
     updateUIState('idle');
     timerValueEl.textContent = '00:00:00';
     timerEventEl.textContent = 'Desligando...';
+    statusBadge.className = 'status-badge hidden';
 });
 
 widgetAPI.onError((message: string) => {

@@ -2,7 +2,6 @@
 import * as sudo from 'sudo-prompt';
 
 export class ShutdownService {
-    private shutdownPid: number | null = null;
     private readonly flagPath: string;
     private readonly options = {
         name: 'Shutdown Timer',
@@ -26,24 +25,58 @@ export class ShutdownService {
             // se o usuário iniciou um novo timer recentemente.
             const sessionId = Date.now().toString();
 
-            if (platform === 'darwin' || platform === 'linux') {
-                try {
-                    fs.writeFileSync(this.flagPath, sessionId);
-                    console.log(`[ShutdownService] Flag (${sessionId}) criada em: ${this.flagPath}`);
-                } catch (e: any) {
-                    return reject(new Error(`Falha ao criar flag file: ${e.message}`));
-                }
+            // Criamos a flag para todas as plataformas para ter um state source of truth
+            const path = require('path');
+            const dir = path.dirname(this.flagPath);
+            try {
+                if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+
+                fs.writeFileSync(this.flagPath, sessionId);
+                console.log(`[ShutdownService] Flag (${sessionId}) criada em: ${this.flagPath}`);
+            } catch (e: any) {
+                return reject(new Error(`Falha ao criar flag file: ${e.message}`));
             }
 
             let command = '';
             if (platform === 'darwin' || platform === 'linux') {
-                // Comando Ultra-Seguro:
-                // 1. Espera o tempo.
-                // 2. Verifica se o arquivo existe.
-                // 3. Verifica se o conteúdo do arquivo ainda é o mesmo ID desta sessão.
-                // 4. Só desliga se tudo bater.
-                command = `/bin/sh -c "(/bin/sleep ${seconds} && if [ -f '${this.flagPath}' ] && [ \"\$(cat '${this.flagPath}')\" = \"${sessionId}\" ]; then /sbin/shutdown -h now; fi) > /dev/null 2>&1 &"`;
+                // Cria um script shell temporário para lidar com o sleep e a lógica de desligamento
+                const scriptPath = path.join(dir, 'shutdown_script.sh');
+                const scriptContent = `#!/bin/bash
+sleep ${seconds}
+if [ -f "${this.flagPath}" ] && [ "$(cat "${this.flagPath}")" = "${sessionId}" ]; then
+    # 1. Limpa a flag PRIMEIRO
+    rm -f "${this.flagPath}"
+    
+    # 2. Lógica de desligamento
+    if [ "$(uname)" = "Darwin" ]; then
+        # Ignora sinais de encerramento para garantir que o script não seja morto pelo shutdown em andamento
+        trap '' SIGTERM SIGHUP SIGINT
+        
+        # Tenta o desligamento gracioso (fecha os apps visivelmente)
+        GUI_USER=$(stat -f '%Su' /dev/console)
+        sudo -u $GUI_USER osascript -e 'tell app "System Events" to shut down'
+        
+        # Aguarda 10 segundos. Se um app bloquear com aviso de "salvar", 
+        # o script continua e força o desligamento para garantir a ação.
+        sleep 10
+        /sbin/shutdown -h now
+    else
+        /sbin/shutdown -h now
+    fi
+fi
+`;
+                try {
+                    fs.writeFileSync(scriptPath, scriptContent);
+                    fs.chmodSync(scriptPath, '755');
+                } catch (e: any) {
+                    return reject(new Error(`Falha ao criar script de shutdown: ${e.message}`));
+                }
+
+                command = `"${scriptPath}" > /dev/null 2>&1 &`;
             } else if (platform === 'win32') {
+                // No Windows, shutdown /s já é o padrão. Para limpar a flag, precisaríamos 
+                // criar um script bat similar ou deixar que o usuário limpe manualmente/no boot.
+                // Como o foco é macOS, vamos manter o comando padrão do windows.
                 command = `shutdown /s /t ${seconds}`;
             } else {
                 return reject(new Error(`Plataforma não suportada: ${platform}`));
@@ -58,12 +91,10 @@ export class ShutdownService {
                         const currentSession = fs.readFileSync(this.flagPath, 'utf8');
                         if (currentSession === sessionId) fs.unlinkSync(this.flagPath);
                     }
-                    this.shutdownPid = null;
                     reject(new Error(error.message || error.toString()));
                     return;
                 }
 
-                this.shutdownPid = 9999;
                 resolve(true);
             });
         });
@@ -76,30 +107,33 @@ export class ShutdownService {
         const platform = process.platform;
         const fs = require('fs');
 
-        // No macOS/Linux, deletar a flag é suficiente e SEGURO.
-        // O processo em background vai acordar, ver que a flag sumiu (ou mudou o ID) e morrer sozinho.
-        // VANTAGEM: Não precisa de sudo, não pede senha, não interfere em outros processos do sistema.
-        if (platform === 'darwin' || platform === 'linux') {
-            try {
-                if (fs.existsSync(this.flagPath)) {
-                    fs.unlinkSync(this.flagPath);
-                    console.log('[ShutdownService] Flag de shutdown removida. O processo de fundo será ignorado.');
-                }
-            } catch (e: any) {
-                console.warn('[ShutdownService] Erro ao remover flag:', e.message);
+        console.log('[ShutdownService] Tentando cancelar shutdown. Verificando flag:', this.flagPath);
+        try {
+            if (fs.existsSync(this.flagPath)) {
+                fs.unlinkSync(this.flagPath);
+                console.log('[ShutdownService] Flag de shutdown removida. O processo de fundo será ignorado.');
+            } else {
+                console.log('[ShutdownService] Nenhuma flag de shutdown encontrada.');
             }
+        } catch (e: any) {
+            console.warn('[ShutdownService] Erro ao remover flag:', e.message);
+        }
+
+        if (platform === 'darwin' || platform === 'linux') {
+            // Como agora usamos um script de bash com sleep em background que apenas checa a flag,
+            // ao deletar a flag acima, o script automaticamente não fará nada ao terminar o sleep.
+            // Executar `sudo /sbin/shutdown -c` não é mais necessário e causa prompt de "Password:" no console.
+            console.log('[ShutdownService] Cancelamento concluído para macOS/Linux (flag baseada).');
         }
 
         if (platform === 'win32') {
             return new Promise((resolve) => {
                 sudo.exec('shutdown /a', this.options, () => {
-                    this.shutdownPid = null;
                     resolve(true);
                 });
             });
         }
 
-        this.shutdownPid = null;
         return true;
     }
 
@@ -133,13 +167,14 @@ export class ShutdownService {
     }
 
     async rescheduleShutdown(seconds: number): Promise<boolean> {
-        if (this.shutdownPid) {
+        if (this.getStatus()) {
             await this.cancelShutdown();
         }
         return this.scheduleShutdown(seconds);
     }
 
     getStatus(): boolean {
-        return this.shutdownPid !== null;
+        const fs = require('fs');
+        return fs.existsSync(this.flagPath);
     }
 }

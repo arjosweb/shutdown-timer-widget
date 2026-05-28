@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, Notification, dialog } from 'electron';
+import { app, BrowserWindow, ipcMain, Notification, dialog, Tray, Menu, nativeImage } from 'electron';
 import * as path from 'path';
 import { TimerManager } from './services/timerManager';
 import { ShutdownService } from './services/shutdownService';
@@ -6,6 +6,65 @@ import { ShutdownService } from './services/shutdownService';
 let mainWindow: BrowserWindow | null = null;
 let timer: TimerManager;
 let shutdownService: ShutdownService;
+let tray: Tray | null = null;
+let isQuitting = false;
+
+function createTray() {
+    if (tray) return;
+    
+    let iconPath = path.join(__dirname, '..', 'assets', 'icon.png');
+    let icon = nativeImage.createFromPath(iconPath);
+    if (icon.isEmpty()) {
+        iconPath = path.join(__dirname, '..', '..', 'assets', 'icon.png');
+        icon = nativeImage.createFromPath(iconPath);
+    }
+    if (icon.isEmpty()) {
+        icon = nativeImage.createEmpty();
+    } else {
+        // Redimensionar ícone para não ficar gigante na barra superior (macOS/Windows)
+        icon = icon.resize({ width: 16, height: 16 });
+    }
+    
+    tray = new Tray(icon);
+    
+    const contextMenu = Menu.buildFromTemplate([
+        { label: 'Mostrar', click: () => {
+            mainWindow?.show();
+            mainWindow?.restore();
+            if (tray) { tray.destroy(); tray = null; }
+        }},
+        { label: 'Cancelar Shutdown', click: async () => {
+            if (timer.getState().state === 'running') {
+                timer.stop();
+            }
+            await shutdownService.cancelShutdown();
+        }},
+        { type: 'separator' },
+        { label: 'Sair', click: () => app.quit() }
+    ]);
+    
+    tray.setToolTip('Shutdown Timer');
+    tray.setContextMenu(contextMenu);
+    
+    tray.on('click', () => {
+        mainWindow?.show();
+        mainWindow?.restore();
+        if (tray) { tray.destroy(); tray = null; }
+    });
+}
+
+function updateTrayTooltip(seconds: number) {
+    if (tray && !tray.isDestroyed()) {
+        if (seconds > 0) {
+            const h = Math.floor(seconds / 3600);
+            const m = Math.floor((seconds % 3600) / 60);
+            const s = seconds % 60;
+            tray.setToolTip(`Shutdown em ${h}h ${m}m ${s}s`);
+        } else {
+            tray.setToolTip('Shutdown Timer');
+        }
+    }
+}
 
 function createWindow() {
     mainWindow = new BrowserWindow({
@@ -42,6 +101,8 @@ function createWindow() {
     }
 
     mainWindow.on('close', (e) => {
+        if (isQuitting) return;
+
         if (timer && timer.getState().state === 'running') {
             const choice = dialog.showMessageBoxSync(mainWindow!, {
                 type: 'question',
@@ -65,6 +126,18 @@ function createWindow() {
         }
     });
 
+    mainWindow.on('minimize', () => {
+        createTray();
+        mainWindow?.hide();
+    });
+
+    mainWindow.on('restore', () => {
+        if (tray && !tray.isDestroyed()) {
+            tray.destroy();
+            tray = null;
+        }
+    });
+
     mainWindow.on('closed', () => {
         mainWindow = null;
     });
@@ -72,15 +145,18 @@ function createWindow() {
 
 function setupTimerEvents() {
     timer.on('tick', (seconds: number) => {
+        updateTrayTooltip(seconds);
         if (mainWindow && !mainWindow.isDestroyed()) {
             mainWindow.webContents.send('timer-tick', seconds);
         }
 
-        // Notificação nos últimos 30 segundos
-        if (seconds === 30) {
+        // Notificação nos últimos 30 segundos (ou no início se o total configurado for menor que 30s)
+        const shouldNotify = (timer.totalSeconds >= 30 && seconds === 30) ||
+                             (timer.totalSeconds < 30 && seconds === timer.totalSeconds);
+        if (shouldNotify) {
             new Notification({
                 title: 'Shutdown Timer',
-                body: 'O computador será desligado em 30 segundos!',
+                body: `O computador será desligado em ${seconds} segundos!`,
                 urgency: 'critical',
             }).show();
         }
@@ -102,6 +178,9 @@ function setupTimerEvents() {
 
 function setupIPCHandlers() {
     ipcMain.handle('start-timer', async (_event, seconds: number) => {
+        if (seconds < 10) {
+            return { success: false, error: 'O tempo mínimo é de 10 segundos.' };
+        }
         try {
             await shutdownService.scheduleShutdown(seconds);
             timer.start(seconds);
@@ -160,10 +239,28 @@ function setupIPCHandlers() {
     });
 }
 
+// Suprimir erros de parse de certificado do Chromium no macOS
+app.commandLine.appendSwitch('log-level', '3');
+
 // ── App Lifecycle ─────────────────────────────
-app.whenReady().then(() => {
+app.whenReady().then(async () => {
     timer = new TimerManager();
     shutdownService = new ShutdownService(app.getPath('userData'));
+
+    if (shutdownService.getStatus()) {
+        const choice = dialog.showMessageBoxSync({
+            type: 'question',
+            buttons: ['Manter Agendamento', 'Cancelar Shutdown'],
+            title: 'Shutdown Pendente',
+            message: 'Um shutdown foi agendado em uma sessão anterior. O que deseja fazer?',
+            defaultId: 0,
+            cancelId: 0
+        });
+
+        if (choice === 1) {
+            await shutdownService.cancelShutdown();
+        }
+    }
 
     setupTimerEvents();
     setupIPCHandlers();
@@ -181,6 +278,7 @@ app.on('activate', () => {
 });
 
 app.on('before-quit', async () => {
+    isQuitting = true;
     if (timer && timer.getState().state === 'running') {
         timer.stop();
         try {
