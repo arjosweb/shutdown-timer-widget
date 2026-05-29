@@ -2,6 +2,12 @@
 
 Um widget timer flutuante, elegante e minimalista para macOS, Windows e Linux, desenhado com estilo nativo (glassmorphism/translucidez) para agendar o desligamento do computador.
 
+🌐 **Languages / Idiomas**:
+- [Português (Brasil)](README.md)
+- [English](README.en.md)
+- [Español](README.es.md)
+
+
 [![GitHub Repository](https://img.shields.io/badge/GitHub-Repository-blue?style=flat-square&logo=github)](https://github.com/arjosweb/shutdown-timer-widget)
 ![Electron](https://img.shields.io/badge/Electron-47848F?style=flat-square&logo=electron&logoColor=white)
 ![TypeScript](https://img.shields.io/badge/TypeScript-007ACC?style=flat-square&logo=typescript&logoColor=white)

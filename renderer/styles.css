@@ -418,3 +418,51 @@ body {
 ::selection {
   background-color: rgba(43, 108, 238, 0.5);
 }
+
+/* ── Language Selector ──────────────────────────── */
+.language-selector-container {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  margin-top: 26px;
+  -webkit-app-region: no-drag;
+}
+
+.lang-select {
+  background: var(--input-bg);
+  border: 1px solid var(--glass-border-subtle);
+  border-radius: 8px;
+  padding: 6px 12px;
+  font-size: 11px;
+  color: var(--text-secondary);
+  font-family: 'Inter', sans-serif;
+  outline: none;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  width: 140px;
+  text-align: center;
+  text-align-last: center;
+  appearance: none;
+  -webkit-appearance: none;
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='rgba(255,255,255,0.7)' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><polyline points='6 9 12 15 18 9'></polyline></svg>");
+  background-repeat: no-repeat;
+  background-position: right 10px center;
+  padding-right: 28px;
+}
+
+.lang-select:hover {
+  border-color: rgba(43, 108, 238, 0.4);
+  color: var(--text-primary);
+  background-color: var(--surface-hover);
+}
+
+.lang-select:focus {
+  border-color: var(--primary);
+  box-shadow: 0 0 0 2px rgba(43, 108, 238, 0.15);
+}
+
+.lang-select option {
+  background: #1e1e1e;
+  color: var(--text-primary);
+  font-size: 12px;
+}

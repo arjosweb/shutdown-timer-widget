@@ -12,14 +12,95 @@ interface TimerAPI {
     onComplete: (callback: () => void) => void;
     onError: (callback: (message: string) => void) => void;
     removeAllListeners: () => void;
+    setLanguage: (lang: string) => void;
 }
+
+// ── Translation Dictionaries ────────────────────────
+const translations: Record<string, Record<string, string>> = {
+    'pt-BR': {
+        timer: 'TIMER',
+        timeRemaining: 'TEMPO RESTANTE',
+        willTurnOffAt: 'Irá desligar às',
+        willTurnOffAtPlaceholder: 'Irá desligar às --:--',
+        restartBtn: 'Reiniciar',
+        shutdownBtn: 'Desligar',
+        hours: 'Horas',
+        minutes: 'Minutos',
+        seconds: 'Segundos',
+        minimize: 'Minimizar',
+        start: 'Iniciar',
+        stop: 'Parar',
+        cancelingText: 'Cancelando...',
+        scheduled: 'Agendado',
+        canceling: 'Cancelando',
+        min10s: 'Mín: 10s',
+        minTimeError: 'Tempo mínimo de 10s',
+        wait: 'Aguarde...',
+        error: 'Erro',
+        permissionDenied: 'permissão negada',
+        errorCanceling: 'Erro ao cancelar',
+        turningOff: 'Desligando...',
+        criticalError: 'Erro crítico: Falha ao carregar API do sistema.\n\nVerifique se o arquivo preload.js foi carregado.'
+    },
+    'en': {
+        timer: 'TIMER',
+        timeRemaining: 'TIME REMAINING',
+        willTurnOffAt: 'Will turn off at',
+        willTurnOffAtPlaceholder: 'Will turn off at --:--',
+        restartBtn: 'Restart',
+        shutdownBtn: 'Shutdown',
+        hours: 'Hours',
+        minutes: 'Minutes',
+        seconds: 'Seconds',
+        minimize: 'Minimize',
+        start: 'Start',
+        stop: 'Stop',
+        cancelingText: 'Canceling...',
+        scheduled: 'Scheduled',
+        canceling: 'Canceling',
+        min10s: 'Min: 10s',
+        minTimeError: 'Minimum time of 10s',
+        wait: 'Wait...',
+        error: 'Error',
+        permissionDenied: 'permission denied',
+        errorCanceling: 'Error canceling',
+        turningOff: 'Turning off...',
+        criticalError: 'Critical error: Failed to load system API.\n\nVerify if preload.js was loaded.'
+    },
+    'es': {
+        timer: 'TEMPORIZADOR',
+        timeRemaining: 'TIEMPO RESTANTE',
+        willTurnOffAt: 'Se apagará a las',
+        willTurnOffAtPlaceholder: 'Se apagará a las --:--',
+        restartBtn: 'Reiniciar',
+        shutdownBtn: 'Apagar',
+        hours: 'Horas',
+        minutes: 'Minutos',
+        seconds: 'Segundos',
+        minimize: 'Minimizar',
+        start: 'Iniciar',
+        stop: 'Parar',
+        cancelingText: 'Cancelando...',
+        scheduled: 'Programado',
+        canceling: 'Cancelando',
+        min10s: 'Mín: 10s',
+        minTimeError: 'Tiempo mínimo de 10s',
+        wait: 'Espere...',
+        error: 'Error',
+        permissionDenied: 'permiso denegado',
+        errorCanceling: 'Error al cancelar',
+        turningOff: 'Apagando...',
+        criticalError: 'Error crítico: No se pudo cargar la API del sistema.\n\nVerifique si preload.js fue cargado.'
+    }
+};
 
 // Helper to access window.timerAPI safely without global augmentation
 const widgetAPI = (window as any).timerAPI as TimerAPI;
 
 if (!widgetAPI) {
     console.error('CRITICAL: timerAPI is missing in window object.');
-    alert('Erro crítico: Falha ao carregar API do sistema.\n\nVerifique se o arquivo preload.js foi carregado.');
+    const userLang = navigator.language.startsWith('es') ? 'es' : (navigator.language.startsWith('en') ? 'en' : 'pt-BR');
+    alert(translations[userLang]?.criticalError || translations['pt-BR'].criticalError);
 }
 
 // ── DOM Elements ──────────────────────────────────
@@ -40,10 +121,60 @@ const btnMinimize = document.getElementById('btn-minimize') as HTMLElement;
 const btnClose = document.getElementById('btn-close') as HTMLElement;
 const btnMinimizeDot = document.getElementById('btn-minimize-dot') as HTMLElement;
 
+// Static label elements for translation
+const titleLabelEl = document.querySelector('.title-bar .title-label') as HTMLElement;
+const timerLabelEl = document.querySelector('.timer-display .timer-label') as HTMLElement;
+const labelRestart = document.getElementById('label-restart') as HTMLElement;
+const labelShutdown = document.getElementById('label-shutdown') as HTMLElement;
+const labelHours = document.getElementById('label-hours') as HTMLElement;
+const labelMinutes = document.getElementById('label-minutes') as HTMLElement;
+const labelSeconds = document.getElementById('label-seconds') as HTMLElement;
+const langSelect = document.getElementById('lang-select') as HTMLSelectElement;
+
 // ── State ─────────────────────────────────────────
 let currentState = 'idle'; // idle, running, paused, canceling
 let totalConfiguredSeconds = 0;
 let isCanceling = false;
+let currentLanguage = localStorage.getItem('language') || 'pt-BR';
+
+// ── Translation Logic ─────────────────────────────
+function applyLanguage(lang: string): void {
+    if (!translations[lang]) return;
+    currentLanguage = lang;
+    localStorage.setItem('language', lang);
+
+    // Update static strings
+    if (titleLabelEl) titleLabelEl.textContent = translations[lang].timer;
+    if (timerLabelEl) timerLabelEl.textContent = translations[lang].timeRemaining;
+    if (labelRestart) labelRestart.textContent = translations[lang].restartBtn;
+    if (labelShutdown) labelShutdown.textContent = translations[lang].shutdownBtn;
+    if (labelHours) labelHours.textContent = translations[lang].hours;
+    if (labelMinutes) labelMinutes.textContent = translations[lang].minutes;
+    if (labelSeconds) labelSeconds.textContent = translations[lang].seconds;
+    if (btnMinimize) btnMinimize.textContent = translations[lang].minimize;
+
+    // Update state strings
+    if (currentState === 'running') {
+        btnStartText.textContent = translations[lang].stop;
+        statusBadge.textContent = translations[lang].scheduled;
+    } else if (currentState === 'canceling') {
+        btnStartText.textContent = translations[lang].cancelingText;
+        statusBadge.textContent = translations[lang].canceling;
+    } else {
+        btnStartText.textContent = translations[lang].start;
+        if (currentState === 'idle') {
+            timerEventEl.textContent = translations[lang].willTurnOffAtPlaceholder;
+        }
+    }
+
+    // Inform main process of language selection
+    if (widgetAPI && typeof widgetAPI.setLanguage === 'function') {
+        widgetAPI.setLanguage(lang);
+    }
+
+    // Refresh dynamic timer preview if idle
+    updateEventPreview();
+}
 
 // ── Helpers ───────────────────────────────────────
 function formatTime(totalSeconds: number): string {
@@ -57,7 +188,7 @@ function calculateShutdownTime(seconds: number): string {
     const shutdownDate = new Date(Date.now() + seconds * 1000);
     const hours = String(shutdownDate.getHours()).padStart(2, '0');
     const minutes = String(shutdownDate.getMinutes()).padStart(2, '0');
-    return `Irá desligar às ${hours}:${minutes}`;
+    return `${translations[currentLanguage].willTurnOffAt} ${hours}:${minutes}`;
 }
 
 function getInputSeconds(): number {
@@ -85,23 +216,23 @@ function updateUIState(state: string): void {
     currentState = state;
 
     if (state === 'running') {
-        btnStartText.textContent = 'Parar';
+        btnStartText.textContent = translations[currentLanguage].stop;
         btnStart.classList.add('active');
         (btnStart as HTMLButtonElement).disabled = false;
         timerDisplayEl.classList.add('active');
         timerValueEl.classList.add('running');
         setInputsDisabled(true);
         
-        statusBadge.textContent = 'Agendado';
+        statusBadge.textContent = translations[currentLanguage].scheduled;
         statusBadge.className = 'status-badge success';
     } else if (state === 'canceling') {
-        btnStartText.textContent = 'Cancelando...';
+        btnStartText.textContent = translations[currentLanguage].cancelingText;
         (btnStart as HTMLButtonElement).disabled = true;
         
-        statusBadge.textContent = 'Cancelando';
+        statusBadge.textContent = translations[currentLanguage].canceling;
         statusBadge.className = 'status-badge loading';
     } else {
-        btnStartText.textContent = 'Iniciar';
+        btnStartText.textContent = translations[currentLanguage].start;
         btnStart.classList.remove('active');
         (btnStart as HTMLButtonElement).disabled = false;
         timerDisplayEl.classList.remove('active');
@@ -110,7 +241,7 @@ function updateUIState(state: string): void {
         setInputsDisabled(false);
 
         if (state === 'idle') {
-            timerEventEl.textContent = 'Irá desligar às --:--';
+            timerEventEl.textContent = translations[currentLanguage].willTurnOffAtPlaceholder;
             statusBadge.className = 'status-badge hidden';
         }
     }
@@ -141,13 +272,13 @@ function updateEventPreview() {
             timerEventEl.textContent = calculateShutdownTime(seconds);
             timerValueEl.textContent = formatTime(seconds);
             if (seconds < 10) {
-                statusBadge.textContent = 'Min: 10s';
+                statusBadge.textContent = translations[currentLanguage].min10s;
                 statusBadge.className = 'status-badge loading';
             } else {
                 statusBadge.className = 'status-badge hidden';
             }
         } else {
-            timerEventEl.textContent = 'Irá desligar às --:--';
+            timerEventEl.textContent = translations[currentLanguage].willTurnOffAtPlaceholder;
             timerValueEl.textContent = '00:00:00';
             statusBadge.className = 'status-badge hidden';
         }
@@ -163,8 +294,8 @@ if (btnStart) btnStart.addEventListener('click', async () => {
     if (currentState === 'idle') {
         const seconds = getInputSeconds();
         if (seconds < 10) {
-            timerEventEl.textContent = 'Tempo mínimo de 10s';
-            statusBadge.textContent = 'Erro';
+            timerEventEl.textContent = translations[currentLanguage].minTimeError;
+            statusBadge.textContent = translations[currentLanguage].error;
             statusBadge.className = 'status-badge error';
             setTimeout(updateEventPreview, 3000);
             return;
@@ -173,21 +304,21 @@ if (btnStart) btnStart.addEventListener('click', async () => {
         totalConfiguredSeconds = seconds;
         timerEventEl.textContent = calculateShutdownTime(seconds);
         
-        statusBadge.textContent = 'Aguarde...';
+        statusBadge.textContent = translations[currentLanguage].wait;
         statusBadge.className = 'status-badge loading';
         (btnStart as HTMLButtonElement).disabled = true;
 
         const result = await widgetAPI.startTimer(seconds);
         if (!result.success) {
-            timerEventEl.textContent = `Erro: ${result.error || 'permissão negada'}`;
-            statusBadge.textContent = 'Erro';
+            timerEventEl.textContent = `${translations[currentLanguage].error}: ${result.error || translations[currentLanguage].permissionDenied}`;
+            statusBadge.textContent = translations[currentLanguage].error;
             statusBadge.className = 'status-badge error';
             (btnStart as HTMLButtonElement).disabled = false;
             setTimeout(() => {
                 updateEventPreview();
             }, 5000);
         } else {
-            statusBadge.textContent = 'Agendado';
+            statusBadge.textContent = translations[currentLanguage].scheduled;
             statusBadge.className = 'status-badge success';
         }
     } else if (currentState === 'running') {
@@ -198,8 +329,8 @@ if (btnStart) btnStart.addEventListener('click', async () => {
         
         isCanceling = false;
         if (!result.success) {
-            timerEventEl.textContent = 'Erro ao cancelar';
-            statusBadge.textContent = 'Erro';
+            timerEventEl.textContent = translations[currentLanguage].errorCanceling;
+            statusBadge.textContent = translations[currentLanguage].error;
             statusBadge.className = 'status-badge error';
             setTimeout(() => {
                 updateUIState('running');
@@ -238,6 +369,15 @@ if (btnMinimizeDot) btnMinimizeDot.addEventListener('click', () => {
     widgetAPI.minimizeWindow();
 });
 
+// Language Select change listener
+if (langSelect) {
+    langSelect.value = currentLanguage;
+    langSelect.addEventListener('change', (e) => {
+        const selectedLang = (e.target as HTMLSelectElement).value;
+        applyLanguage(selectedLang);
+    });
+}
+
 // ── IPC Listeners ─────────────────────────────────
 
 widgetAPI.onTick((seconds: number) => {
@@ -256,18 +396,19 @@ widgetAPI.onStateChange((state: string) => {
 widgetAPI.onComplete(() => {
     updateUIState('idle');
     timerValueEl.textContent = '00:00:00';
-    timerEventEl.textContent = 'Desligando...';
+    timerEventEl.textContent = translations[currentLanguage].turningOff;
     statusBadge.className = 'status-badge hidden';
 });
 
 widgetAPI.onError((message: string) => {
-    timerEventEl.textContent = `Erro: ${message}`;
+    timerEventEl.textContent = `${translations[currentLanguage].error}: ${message}`;
     setTimeout(() => {
         if (currentState === 'idle') {
-            timerEventEl.textContent = 'Irá desligar às --:--';
+            timerEventEl.textContent = translations[currentLanguage].willTurnOffAtPlaceholder;
         }
     }, 3000);
 });
 
 // ── Initialize ────────────────────────────────────
-updateEventPreview();
+applyLanguage(currentLanguage);
+

@@ -33,5 +33,8 @@ contextBridge.exposeInMainWorld('timerAPI', {
         ipcRenderer.removeAllListeners('timer-state-change');
         ipcRenderer.removeAllListeners('timer-complete');
         ipcRenderer.removeAllListeners('timer-error');
-    }
+    },
+
+    // Language sync
+    setLanguage: (lang: string) => ipcRenderer.send('set-language', lang)
 });

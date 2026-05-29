@@ -38,26 +38,26 @@
         <div class="action-buttons">
             <button class="action-btn restart-btn" id="btn-restart">
                 <span class="material-symbols-outlined">restart_alt</span>
-                <span class="btn-label">Restart</span>
+                <span class="btn-label" id="label-restart">Restart</span>
             </button>
             <button class="action-btn shutdown-btn" id="btn-shutdown">
                 <span class="material-symbols-outlined">power_settings_new</span>
-                <span class="btn-label">Shutdown</span>
+                <span class="btn-label" id="label-shutdown">Shutdown</span>
             </button>
         </div>
 
         <!-- Time Inputs -->
         <div class="time-inputs">
             <div class="input-group">
-                <label class="input-label">Hours</label>
+                <label class="input-label" id="label-hours">Hours</label>
                 <input type="number" class="time-input" id="input-hours" min="0" max="23" value="01">
             </div>
             <div class="input-group">
-                <label class="input-label">Minutes</label>
+                <label class="input-label" id="label-minutes">Minutes</label>
                 <input type="number" class="time-input" id="input-minutes" min="0" max="59" value="45">
             </div>
             <div class="input-group">
-                <label class="input-label">Seconds</label>
+                <label class="input-label" id="label-seconds">Seconds</label>
                 <input type="number" class="time-input" id="input-seconds" min="0" max="59" value="00">
             </div>
         </div>
@@ -68,6 +68,15 @@
             <button class="ctrl-btn primary" id="btn-start">
                 <span id="btn-start-text">Iniciar</span>
             </button>
+        </div>
+
+        <!-- Language Selector -->
+        <div class="language-selector-container">
+            <select id="lang-select" class="lang-select">
+                <option value="pt-BR">Português (BR)</option>
+                <option value="en">English</option>
+                <option value="es">Español</option>
+            </select>
         </div>
     </div>
 

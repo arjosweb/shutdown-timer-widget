@@ -8,6 +8,61 @@ let timer: TimerManager;
 let shutdownService: ShutdownService;
 let tray: Tray | null = null;
 let isQuitting = false;
+let currentLanguage = 'pt-BR';
+
+const mainTranslations: Record<string, Record<string, any>> = {
+    'pt-BR': {
+        trayShow: 'Mostrar',
+        trayCancel: 'Cancelar Desligamento',
+        trayQuit: 'Sair',
+        trayTooltipPrefix: 'Desligamento em',
+        trayTooltipDefault: 'Shutdown Timer',
+        notificationTitle: 'Shutdown Timer',
+        notificationBody: 'O computador será desligado em {seconds} segundos!',
+        dialogCloseTitle: 'Timer em andamento',
+        dialogCloseMessage: 'Um desligamento está agendado. O que deseja fazer?',
+        dialogCloseDetail: 'Se você sair, o desligamento será cancelado.',
+        dialogCloseButtons: ['Minimizar', 'Parar Timer e Sair'],
+        dialogPendingTitle: 'Desligamento Pendente',
+        dialogPendingMessage: 'Um desligamento foi agendado em uma sessão anterior. O que deseja fazer?',
+        dialogPendingButtons: ['Manter Agendamento', 'Cancelar Desligamento'],
+        errorMinTime: 'O tempo mínimo é de 10 segundos.'
+    },
+    'en': {
+        trayShow: 'Show',
+        trayCancel: 'Cancel Shutdown',
+        trayQuit: 'Quit',
+        trayTooltipPrefix: 'Shutdown in',
+        trayTooltipDefault: 'Shutdown Timer',
+        notificationTitle: 'Shutdown Timer',
+        notificationBody: 'The computer will be turned off in {seconds} seconds!',
+        dialogCloseTitle: 'Timer in progress',
+        dialogCloseMessage: 'A shutdown is scheduled. What do you want to do?',
+        dialogCloseDetail: 'If you quit, the shutdown will be canceled.',
+        dialogCloseButtons: ['Minimize', 'Stop Timer and Quit'],
+        dialogPendingTitle: 'Pending Shutdown',
+        dialogPendingMessage: 'A shutdown was scheduled in a previous session. What do you want to do?',
+        dialogPendingButtons: ['Keep Scheduled', 'Cancel Shutdown'],
+        errorMinTime: 'The minimum time is 10 seconds.'
+    },
+    'es': {
+        trayShow: 'Mostrar',
+        trayCancel: 'Cancelar Apagado',
+        trayQuit: 'Salir',
+        trayTooltipPrefix: 'Apagado en',
+        trayTooltipDefault: 'Shutdown Timer',
+        notificationTitle: 'Shutdown Timer',
+        notificationBody: '¡La computadora se apagará en {seconds} segundos!',
+        dialogCloseTitle: 'Temporizador en curso',
+        dialogCloseMessage: 'Se ha programado un apagado. ¿Qué desea hacer?',
+        dialogCloseDetail: 'Si sale, se cancelará el apagado.',
+        dialogCloseButtons: ['Minimizar', 'Detener Temporizador y Salir'],
+        dialogPendingTitle: 'Apagado Pendiente',
+        dialogPendingMessage: 'Se programó un apagado en una sesión anterior. ¿Qué desea hacer?',
+        dialogPendingButtons: ['Mantener Programación', 'Cancelar Apagado'],
+        errorMinTime: 'El tiempo mínimo es de 10 segundos.'
+    }
+};
 
 function createTray() {
     if (tray) return;
@@ -27,24 +82,8 @@ function createTray() {
     
     tray = new Tray(icon);
     
-    const contextMenu = Menu.buildFromTemplate([
-        { label: 'Mostrar', click: () => {
-            mainWindow?.show();
-            mainWindow?.restore();
-            if (tray) { tray.destroy(); tray = null; }
-        }},
-        { label: 'Cancelar Shutdown', click: async () => {
-            if (timer.getState().state === 'running') {
-                timer.stop();
-            }
-            await shutdownService.cancelShutdown();
-        }},
-        { type: 'separator' },
-        { label: 'Sair', click: () => app.quit() }
-    ]);
-    
-    tray.setToolTip('Shutdown Timer');
-    tray.setContextMenu(contextMenu);
+    updateTrayMenu();
+    updateTrayTooltip(timer ? timer.getState().remainingSeconds : 0);
     
     tray.on('click', () => {
         mainWindow?.show();
@@ -53,15 +92,39 @@ function createTray() {
     });
 }
 
+function updateTrayMenu() {
+    if (!tray || tray.isDestroyed()) return;
+
+    const t = mainTranslations[currentLanguage] || mainTranslations['pt-BR'];
+    const contextMenu = Menu.buildFromTemplate([
+        { label: t.trayShow, click: () => {
+            mainWindow?.show();
+            mainWindow?.restore();
+            if (tray) { tray.destroy(); tray = null; }
+        }},
+        { label: t.trayCancel, click: async () => {
+            if (timer.getState().state === 'running') {
+                timer.stop();
+            }
+            await shutdownService.cancelShutdown();
+        }},
+        { type: 'separator' },
+        { label: t.trayQuit, click: () => app.quit() }
+    ]);
+
+    tray.setContextMenu(contextMenu);
+}
+
 function updateTrayTooltip(seconds: number) {
     if (tray && !tray.isDestroyed()) {
+        const t = mainTranslations[currentLanguage] || mainTranslations['pt-BR'];
         if (seconds > 0) {
             const h = Math.floor(seconds / 3600);
             const m = Math.floor((seconds % 3600) / 60);
             const s = seconds % 60;
-            tray.setToolTip(`Shutdown em ${h}h ${m}m ${s}s`);
+            tray.setToolTip(`${t.trayTooltipPrefix} ${h}h ${m}m ${s}s`);
         } else {
-            tray.setToolTip('Shutdown Timer');
+            tray.setToolTip(t.trayTooltipDefault);
         }
     }
 }
@@ -69,7 +132,7 @@ function updateTrayTooltip(seconds: number) {
 function createWindow() {
     mainWindow = new BrowserWindow({
         width: 380,
-        height: 540,
+        height: 580,
         frame: false,
         transparent: true,
         alwaysOnTop: true,
@@ -87,10 +150,6 @@ function createWindow() {
         },
     });
 
-    // Load from the same folder structure (dist/renderer/index.html will be needed or dist/../renderer/index.html)
-    // Since we compile to dist, __dirname is dist.
-    // We will keep renderer in 'renderer' at root, so path is ../renderer/index.html
-    // OR we copy renderer to dist. Let's assume we copy renderer to dist.
     mainWindow.loadFile(path.join(__dirname, 'renderer', 'index.html'));
 
     // Workaround for movable frameless window
@@ -104,12 +163,13 @@ function createWindow() {
         if (isQuitting) return;
 
         if (timer && timer.getState().state === 'running') {
+            const t = mainTranslations[currentLanguage] || mainTranslations['pt-BR'];
             const choice = dialog.showMessageBoxSync(mainWindow!, {
                 type: 'question',
-                buttons: ['Minimizar', 'Parar Timer e Sair'],
-                title: 'Timer em andamento',
-                message: 'Um shutdown está agendado. O que deseja fazer?',
-                detail: 'Se você sair, o shutdown será cancelado.',
+                buttons: t.dialogCloseButtons,
+                title: t.dialogCloseTitle,
+                message: t.dialogCloseMessage,
+                detail: t.dialogCloseDetail,
                 defaultId: 0,
                 cancelId: 0, // Esc ou fechar janela = Minimizar
             });
@@ -120,8 +180,6 @@ function createWindow() {
                 mainWindow?.minimize();
             } else {
                 // Parar Timer e Sair
-                // O evento 'close' prossegue, 'closed' é chamado, depois 'window-all-closed',
-                // e 'before-quit' fará a limpeza (cancelShutdown).
             }
         }
     });
@@ -156,9 +214,11 @@ function setupTimerEvents() {
             (timer.totalSeconds < 30 && seconds === timer.totalSeconds)
         );
         if (shouldNotify) {
+            const t = mainTranslations[currentLanguage] || mainTranslations['pt-BR'];
+            const notificationBody = t.notificationBody.replace('{seconds}', String(seconds));
             new Notification({
-                title: 'Shutdown Timer',
-                body: `O computador será desligado em ${seconds} segundos!`,
+                title: t.notificationTitle,
+                body: notificationBody,
                 urgency: 'critical',
             }).show();
         }
@@ -180,8 +240,9 @@ function setupTimerEvents() {
 
 function setupIPCHandlers() {
     ipcMain.handle('start-timer', async (_event, seconds: number) => {
+        const t = mainTranslations[currentLanguage] || mainTranslations['pt-BR'];
         if (seconds < 10) {
-            return { success: false, error: 'O tempo mínimo é de 10 segundos.' };
+            return { success: false, error: t.errorMinTime };
         }
         try {
             await shutdownService.scheduleShutdown(seconds);
@@ -194,9 +255,7 @@ function setupIPCHandlers() {
 
     ipcMain.handle('stop-timer', async () => {
         try {
-            // Paramos o timer visual IMEDIATAMENTE para a UI responder rápido.
             timer.stop();
-            // O cancelamento real (deletar flag) acontece em background.
             await shutdownService.cancelShutdown();
             return { success: true };
         } catch (error: any) {
@@ -234,9 +293,18 @@ function setupIPCHandlers() {
     });
 
     ipcMain.on('close-window', async () => {
-        // A lógica de confirmação e cancelamento agora reside no evento 'close' da janela e 'before-quit'.
         if (mainWindow) {
             mainWindow.close();
+        }
+    });
+
+    ipcMain.on('set-language', (_event, lang: string) => {
+        if (mainTranslations[lang]) {
+            currentLanguage = lang;
+            updateTrayMenu();
+            if (timer) {
+                updateTrayTooltip(timer.getState().remainingSeconds);
+            }
         }
     });
 }
@@ -250,11 +318,12 @@ app.whenReady().then(async () => {
     shutdownService = new ShutdownService(app.getPath('userData'));
 
     if (shutdownService.getStatus()) {
+        const t = mainTranslations[currentLanguage] || mainTranslations['pt-BR'];
         const choice = dialog.showMessageBoxSync({
             type: 'question',
-            buttons: ['Manter Agendamento', 'Cancelar Shutdown'],
-            title: 'Shutdown Pendente',
-            message: 'Um shutdown foi agendado em uma sessão anterior. O que deseja fazer?',
+            buttons: t.dialogPendingButtons,
+            title: t.dialogPendingTitle,
+            message: t.dialogPendingMessage,
             defaultId: 0,
             cancelId: 0
         });
@@ -290,3 +359,4 @@ app.on('before-quit', async () => {
         }
     }
 });
+
