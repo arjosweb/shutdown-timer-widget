@@ -23,7 +23,7 @@ export class ShutdownService {
 
     /**
      * Schedules OS shutdown for the given duration.
-     * On macOS, shutdown at timer zero is performed solely by pmset at the scheduled absolute time.
+     * On macOS, the app timer performs the shutdown at completion to avoid the native pmset prompt.
      */
     async scheduleShutdown(seconds: number): Promise<boolean> {
         const platform = process.platform;
@@ -39,7 +39,7 @@ export class ShutdownService {
 
         try {
             if (platform === 'darwin') {
-                await this.scheduleDarwinShutdown(endAt);
+                console.log('[ShutdownService] macOS timer armed locally; shutdown runs at timer completion.');
             } else if (platform === 'win32') {
                 await this.execSudo(`shutdown /s /t ${seconds}`);
             } else if (platform === 'linux') {
@@ -184,26 +184,8 @@ export class ShutdownService {
         console.log(`[ShutdownService] Control files created (session=${sessionId}, endAt=${endAt})`);
     }
 
-    private formatPmsetScheduleDate(endAtMs: number): string {
-        const d = new Date(endAtMs);
-        const mm = String(d.getMonth() + 1).padStart(2, '0');
-        const dd = String(d.getDate()).padStart(2, '0');
-        const yy = String(d.getFullYear()).slice(-2);
-        const HH = String(d.getHours()).padStart(2, '0');
-        const MM = String(d.getMinutes()).padStart(2, '0');
-        const SS = String(d.getSeconds()).padStart(2, '0');
-        return `${mm}/${dd}/${yy} ${HH}:${MM}:${SS}`;
-    }
-
-    private async scheduleDarwinShutdown(endAtMs: number): Promise<void> {
-        const pmsetDate = this.formatPmsetScheduleDate(endAtMs);
-        // Keeps current behavior, but this also clears other system power schedules.
-        const command = `/usr/bin/pmset schedule cancelall ; /usr/bin/pmset schedule shutdown "${pmsetDate}"`;
-        console.log(`[ShutdownService] pmset schedule (unified): ${command} (endAt=${endAtMs})`);
-        await this.execSudo(command);
-    }
-
     private async cancelDarwinSchedules(): Promise<void> {
+        // Defensive cleanup for schedules created by previous versions that used pmset.
         await this.execSudo('/usr/bin/pmset schedule cancelall').catch((err: Error) => {
             console.warn('[ShutdownService] pmset cancelall:', err.message);
         });

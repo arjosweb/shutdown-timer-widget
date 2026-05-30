@@ -371,14 +371,13 @@ function setupTimerEvents(): void {
             mainWindow.webContents.send('timer-complete');
         }
 
-        if (process.platform === 'darwin') {
-            console.log('[Main] Timer complete on macOS. Waiting for scheduled pmset shutdown.');
-            return;
-        }
-
         try {
             console.log('[Main] Timer complete. Executing immediate shutdown...');
-            await shutdownService.forceShutdown();
+            if (process.platform === 'darwin') {
+                await shutdownService.shutdownDarwinImmediately();
+            } else {
+                await shutdownService.forceShutdown();
+            }
         } catch (error: unknown) {
             const message = error instanceof Error ? error.message : String(error);
             console.error('[Main] Failed to execute shutdown on complete:', message);
