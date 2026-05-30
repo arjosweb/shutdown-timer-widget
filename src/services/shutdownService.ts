@@ -1,5 +1,6 @@
 import * as fs from 'fs';
 import * as path from 'path';
+import { exec } from 'child_process';
 // @ts-ignore
 import * as sudo from 'sudo-prompt';
 
@@ -22,117 +23,64 @@ export class ShutdownService {
     }
 
     /**
-     * Agenda o desligamento baseado na plataforma.
+     * Schedules OS shutdown for the given duration.
+     * On macOS, shutdown at timer zero is performed solely by pmset at the scheduled absolute time.
      */
     async scheduleShutdown(seconds: number): Promise<boolean> {
-        return new Promise((resolve, reject) => {
-            const platform = process.platform;
-            const sessionId = Date.now().toString();
-            const endAt = Date.now() + (seconds * 1000);
+        const platform = process.platform;
+        const sessionId = Date.now().toString();
+        const endAt = Date.now() + seconds * 1000;
 
-            const dir = path.dirname(this.flagPath);
-            try {
-                if (!fs.existsSync(dir)) {
-                    fs.mkdirSync(dir, { recursive: true });
-                }
+        try {
+            this.writeControlFiles(sessionId, endAt, seconds);
+        } catch (e: unknown) {
+            const message = e instanceof Error ? e.message : String(e);
+            throw new Error(`Failed to create control files: ${message}`);
+        }
 
-                fs.writeFileSync(this.flagPath, sessionId);
-
-                const meta: ShutdownMeta = { sessionId, endAt, totalSeconds: seconds };
-                fs.writeFileSync(this.metaPath, JSON.stringify(meta));
-
-                console.log(`[ShutdownService] Flag (${sessionId}) criada em: ${this.flagPath}`);
-            } catch (e: any) {
-                return reject(new Error(`Falha ao criar arquivos de controle: ${e.message}`));
-            }
-
+        try {
             if (platform === 'darwin') {
-                // Usa pmset schedule como fallback nativo do macOS.
-                // O shutdown real é disparado pelo evento 'complete' do TimerManager.
-                const shutdownDate = new Date(endAt);
-                const mm = String(shutdownDate.getMonth() + 1).padStart(2, '0');
-                const dd = String(shutdownDate.getDate()).padStart(2, '0');
-                const yy = String(shutdownDate.getFullYear()).slice(-2);
-                const HH = String(shutdownDate.getHours()).padStart(2, '0');
-                const MM = String(shutdownDate.getMinutes()).padStart(2, '0');
-                const SS = String(shutdownDate.getSeconds()).padStart(2, '0');
-                const pmsetDate = `${mm}/${dd}/${yy} ${HH}:${MM}:${SS}`;
-
-                const command = `/usr/bin/pmset schedule shutdown "${pmsetDate}"`;
-                console.log(`[ShutdownService] Agendando pmset fallback: ${command}`);
-
-                sudo.exec(command, this.options, (error: any) => {
-                    if (error) {
-                        // pmset falhou (não fatal — o timer do Electron ainda dispara o shutdown)
-                        console.warn('[ShutdownService] pmset schedule falhou (não fatal):', error.message || error);
-                    }
-                    resolve(true);
-                });
+                await this.scheduleDarwinShutdown(endAt);
             } else if (platform === 'win32') {
-                const command = `shutdown /s /t ${seconds}`;
-                console.log(`[ShutdownService] Executando comando (${platform}): ${command}`);
-
-                sudo.exec(command, this.options, (error: any) => {
-                    if (error) {
-                        console.error('[ShutdownService] ERRO sudo.exec:', error);
-                        this.clearControlFilesSync(sessionId);
-                        reject(new Error(error.message || error.toString()));
-                        return;
-                    }
-                    resolve(true);
-                });
+                await this.execSudo(`shutdown /s /t ${seconds}`);
             } else if (platform === 'linux') {
-                const command = `/sbin/shutdown -h +${Math.ceil(seconds / 60)}`;
-                console.log(`[ShutdownService] Executando comando (${platform}): ${command}`);
-
-                sudo.exec(command, this.options, (error: any) => {
-                    if (error) {
-                        console.error('[ShutdownService] ERRO sudo.exec:', error);
-                        this.clearControlFilesSync(sessionId);
-                        reject(new Error(error.message || error.toString()));
-                        return;
-                    }
-                    resolve(true);
-                });
+                const minutes = Math.max(1, Math.ceil(seconds / 60));
+                await this.execSudo(`/sbin/shutdown -h +${minutes}`);
             } else {
-                return reject(new Error(`Plataforma não suportada: ${platform}`));
+                throw new Error(`Unsupported platform: ${platform}`);
             }
-        });
+            return true;
+        } catch (error: unknown) {
+            this.clearControlFilesSync(sessionId);
+            const message = error instanceof Error ? error.message : String(error);
+            throw new Error(message);
+        }
     }
 
     /**
-     * Cancela o desligamento agendado.
+     * Cancels a scheduled shutdown.
      */
     async cancelShutdown(): Promise<boolean> {
         const platform = process.platform;
 
-        console.log('[ShutdownService] Tentando cancelar shutdown. Verificando flag:', this.flagPath);
+        console.log('[ShutdownService] Cancelling shutdown. Flag path:', this.flagPath);
         try {
             if (fs.existsSync(this.flagPath)) {
                 fs.unlinkSync(this.flagPath);
-                console.log('[ShutdownService] Flag de shutdown removida.');
             }
             if (fs.existsSync(this.metaPath)) {
                 fs.unlinkSync(this.metaPath);
-                console.log('[ShutdownService] Metadados de shutdown removidos.');
             }
-        } catch (e: any) {
-            console.warn('[ShutdownService] Erro ao remover arquivos de controle:', e.message);
+        } catch (e: unknown) {
+            const message = e instanceof Error ? e.message : String(e);
+            console.warn('[ShutdownService] Error removing control files:', message);
         }
 
         if (platform === 'darwin') {
-            return new Promise((resolve) => {
-                sudo.exec('/usr/bin/pmset schedule cancelall', this.options, () => {
-                    resolve(true);
-                });
-            });
-        }
-
-        if (platform === 'win32') {
-            return new Promise((resolve) => {
-                sudo.exec('shutdown /a', this.options, () => {
-                    resolve(true);
-                });
+            await this.cancelDarwinSchedules();
+        } else if (platform === 'win32') {
+            await this.execSudo('shutdown /a').catch((err: Error) => {
+                console.warn('[ShutdownService] shutdown /a failed:', err.message);
             });
         }
 
@@ -140,32 +88,61 @@ export class ShutdownService {
     }
 
     /**
-     * Força o desligamento imediato.
+     * Executes immediate shutdown on macOS using AppleScript (no sudo/password required)
+     * with a fallback to /sbin/shutdown -h now if requested or if AppleScript fails.
      */
-    forceShutdown(): Promise<boolean> {
+    async shutdownDarwinImmediately(): Promise<void> {
+        console.log('[ShutdownService] Triggering immediate macOS shutdown...');
+
+        // Try AppleScript first (silent, passwordless, user-friendly)
+        try {
+            await this.execCommand("osascript -e 'tell application \"System Events\" to shut down'");
+            console.log('[ShutdownService] AppleScript shutdown command sent successfully.');
+            return;
+        } catch (e: unknown) {
+            const message = e instanceof Error ? e.message : String(e);
+            console.warn('[ShutdownService] AppleScript shutdown failed, trying fallback:', message);
+        }
+
+        // Fallback to sudo shutdown if AppleScript fails
+        await this.execSudo('/sbin/shutdown -h now');
+    }
+
+    private execCommand(command: string): Promise<void> {
         return new Promise((resolve, reject) => {
-            let command = '';
-            const platform = process.platform;
-
-            if (platform === 'darwin' || platform === 'linux') {
-                command = `/sbin/shutdown -h now`;
-            } else if (platform === 'win32') {
-                command = `shutdown /s /f /t 0`;
-            } else {
-                return reject(new Error(`Plataforma não suportada: ${platform}`));
-            }
-
-            console.log(`[ShutdownService] Forçando shutdown imediato: ${command}`);
-
-            sudo.exec(command, this.options, (error: any) => {
+            exec(command, (error) => {
                 if (error) {
-                    console.error('[ShutdownService] ERRO ao forçar shutdown:', error);
-                    reject(new Error(error.message || error.toString()));
+                    reject(error);
                     return;
                 }
-                resolve(true);
+                resolve();
             });
         });
+    }
+
+    /**
+     * Forces shutdown after a short delay.
+     */
+    async forceShutdown(delayMs: number = 5000): Promise<boolean> {
+        const platform = process.platform;
+
+        if (platform === 'darwin') {
+            await this.shutdownDarwinImmediately();
+            return true;
+        }
+
+        let command = '';
+        if (platform === 'linux') {
+            command = '/sbin/shutdown -h now';
+        } else if (platform === 'win32') {
+            command = 'shutdown /s /f /t 0';
+        } else {
+            throw new Error(`Unsupported platform: ${platform}`);
+        }
+
+        console.log(`[ShutdownService] Force shutdown: ${command}`);
+        await this.execSudo(command);
+        return true;
     }
 
     async rescheduleShutdown(seconds: number): Promise<boolean> {
@@ -183,12 +160,82 @@ export class ShutdownService {
         try {
             if (fs.existsSync(this.metaPath)) {
                 const content = fs.readFileSync(this.metaPath, 'utf8');
-                return JSON.parse(content);
+                return JSON.parse(content) as ShutdownMeta;
             }
-        } catch (e: any) {
-            console.error('[ShutdownService] Erro ao ler metadados:', e.message);
+        } catch (e: unknown) {
+            const message = e instanceof Error ? e.message : String(e);
+            console.error('[ShutdownService] Error reading metadata:', message);
         }
         return null;
+    }
+
+    private writeControlFiles(sessionId: string, endAt: number, totalSeconds: number): void {
+        const dir = path.dirname(this.flagPath);
+        if (!fs.existsSync(dir)) {
+            fs.mkdirSync(dir, { recursive: true });
+        }
+
+        fs.writeFileSync(this.flagPath, sessionId);
+        const meta: ShutdownMeta = { sessionId, endAt, totalSeconds };
+        fs.writeFileSync(this.metaPath, JSON.stringify(meta));
+        console.log(`[ShutdownService] Control files created (session=${sessionId}, endAt=${endAt})`);
+    }
+
+    private formatPmsetScheduleDate(endAtMs: number): string {
+        const d = new Date(endAtMs);
+        const mm = String(d.getMonth() + 1).padStart(2, '0');
+        const dd = String(d.getDate()).padStart(2, '0');
+        const yy = String(d.getFullYear()).slice(-2);
+        const HH = String(d.getHours()).padStart(2, '0');
+        const MM = String(d.getMinutes()).padStart(2, '0');
+        const SS = String(d.getSeconds()).padStart(2, '0');
+        return `${mm}/${dd}/${yy} ${HH}:${MM}:${SS}`;
+    }
+
+    private async scheduleDarwinShutdown(endAtMs: number): Promise<void> {
+        const pmsetDate = this.formatPmsetScheduleDate(endAtMs);
+        const command = `/usr/bin/pmset schedule cancelall ; /usr/bin/pmset schedule shutdown "${pmsetDate}"`;
+        console.log(`[ShutdownService] pmset schedule (unified): ${command} (endAt=${endAtMs})`);
+        await this.execSudo(command);
+    }
+
+    private async cancelDarwinSchedules(): Promise<void> {
+        await this.execSudo('/usr/bin/pmset schedule cancelall').catch((err: Error) => {
+            console.warn('[ShutdownService] pmset cancelall:', err.message);
+        });
+    }
+
+    private execSudo(command: string): Promise<void> {
+        return new Promise((resolve, reject) => {
+            sudo.exec(command, this.options, (error: unknown) => {
+                if (error) {
+                    const message =
+                        error instanceof Error
+                            ? error.message
+                            : typeof error === 'object' && error !== null && 'message' in error
+                              ? String((error as { message: unknown }).message)
+                              : String(error);
+                    reject(new Error(message));
+                    return;
+                }
+                resolve();
+            });
+        });
+    }
+
+    clearControlFiles(): void {
+        try {
+            if (fs.existsSync(this.flagPath)) {
+                fs.unlinkSync(this.flagPath);
+            }
+            if (fs.existsSync(this.metaPath)) {
+                fs.unlinkSync(this.metaPath);
+            }
+            console.log('[ShutdownService] Control files cleared locally (no sudo).');
+        } catch (e: unknown) {
+            const message = e instanceof Error ? e.message : String(e);
+            console.error('[ShutdownService] Error clearing control files:', message);
+        }
     }
 
     private clearControlFilesSync(sessionId: string): void {
@@ -201,13 +248,14 @@ export class ShutdownService {
             }
             if (fs.existsSync(this.metaPath)) {
                 const content = fs.readFileSync(this.metaPath, 'utf8');
-                const meta = JSON.parse(content);
+                const meta = JSON.parse(content) as ShutdownMeta;
                 if (meta.sessionId === sessionId) {
                     fs.unlinkSync(this.metaPath);
                 }
             }
-        } catch (e: any) {
-            console.error('[ShutdownService] Erro ao limpar arquivos de controle de forma síncrona:', e.message);
+        } catch (e: unknown) {
+            const message = e instanceof Error ? e.message : String(e);
+            console.error('[ShutdownService] Error clearing control files:', message);
         }
     }
 }

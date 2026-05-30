@@ -466,3 +466,18 @@ body {
   color: var(--text-primary);
   font-size: 12px;
 }
+
+/* Close confirmation overlay (hook for optional in-renderer modal) */
+.close-confirm-overlay {
+  display: none;
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.45);
+}
+
+.close-confirm-overlay.hidden {
+  display: none;
+}

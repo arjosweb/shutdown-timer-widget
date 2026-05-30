@@ -1,6 +1,6 @@
 {
   "name": "shutdown-timer-widget",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "description": "Shutdown Timer Widget - Widget flutuante para agendamento de desligamento",
   "main": "out/main.js",
   "scripts": {
@@ -9,7 +9,8 @@
     "pack:mac": "npm run build && electron-builder --mac",
     "pack:win": "npm run build && electron-builder --win",
     "pack:linux": "npm run build && electron-builder --linux",
-    "pack:all": "npm run build && electron-builder --mac --win --linux"
+    "pack:all": "npm run build && electron-builder --mac --win --linux",
+    "release:zip": "bash ./scripts/build-release-zips.sh"
   },
   "build": {
     "appId": "com.shutdown-timer.widget",
@@ -36,7 +37,7 @@
       ]
     },
     "win": {
-      "target": "zip",
+      "target": "portable",
       "icon": "assets/icon.png"
     },
     "linux": {
@@ -52,6 +53,7 @@
     },
     "files": [
       "out/**/*",
+      "assets/**/*",
       "package.json"
     ]
   },

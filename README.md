@@ -74,6 +74,39 @@ Para gerar as versões de distribuição para diferentes plataformas:
 
 Os arquivos gerados estarão na pasta `dist/`.
 
+## Gerar Releases Zipados
+
+Para gerar builds de macOS, Linux e Windows e organizar os arquivos zipados por plataforma:
+
+```bash
+npm run release:zip
+```
+
+O script executa:
+- build multiplataforma (`npm run pack:all`);
+- filtro de artefatos em `dist/` (`.dmg`, `.AppImage`, `.exe`);
+- criação de um `.zip` por artefato;
+- organização final em `downloads/`.
+
+Estrutura de saída esperada:
+
+```text
+downloads/
+  macos/
+    <arquivo>.dmg.zip
+  linux/
+    <arquivo>.AppImage.zip
+  windows/
+    <arquivo>.exe.zip
+```
+
+Observações:
+- Em macOS, gerar artefatos de Windows/Linux pode depender de toolchain adicional de cross-build.
+- Se você já tiver artefatos em `dist/` e quiser só zipar sem rebuild, execute:
+  ```bash
+  bash ./scripts/build-release-zips.sh --no-build
+  ```
+
 ## Estrutura do Projeto
 
 - `src/main.ts`: Processo principal Electron, gerencia a janela e eventos de sistema.

@@ -6,12 +6,13 @@ interface TimerAPI {
     restartTimer: () => Promise<{ success: boolean; error?: string }>;
     getTimerState: () => Promise<{ state: string; remainingSeconds: number; totalSeconds: number }>;
     forceShutdown: () => Promise<{ success: boolean; error?: string }>;
+    tryCloseWindow: () => Promise<{ outcome: string }>;
     minimizeWindow: () => void;
-    closeWindow: () => void;
     onTick: (callback: (seconds: number) => void) => void;
     onStateChange: (callback: (state: string) => void) => void;
     onComplete: (callback: () => void) => void;
     onError: (callback: (message: string) => void) => void;
+    onForceShutdownPending: (callback: () => void) => void;
     removeAllListeners: () => void;
     setLanguage: (lang: string) => void;
 }
@@ -353,7 +354,22 @@ if (btnRestart) btnRestart.addEventListener('click', async () => {
 
 // Force shutdown button
 if (btnShutdown) btnShutdown.addEventListener('click', async () => {
-    await widgetAPI.forceShutdown();
+    (btnShutdown as HTMLButtonElement).disabled = true;
+    timerEventEl.textContent = translations[currentLanguage].turningOff;
+    statusBadge.textContent = translations[currentLanguage].turningOff;
+    statusBadge.className = 'status-badge loading';
+    const result = await widgetAPI.forceShutdown();
+    if (!result.success) {
+        (btnShutdown as HTMLButtonElement).disabled = false;
+        timerEventEl.textContent = `${translations[currentLanguage].error}: ${result.error || ''}`;
+        statusBadge.className = 'status-badge error';
+    }
+});
+
+widgetAPI.onForceShutdownPending(() => {
+    timerEventEl.textContent = translations[currentLanguage].turningOff;
+    statusBadge.textContent = translations[currentLanguage].turningOff;
+    statusBadge.className = 'status-badge loading';
 });
 
 // Minimize button
@@ -363,7 +379,7 @@ if (btnMinimize) btnMinimize.addEventListener('click', () => {
 
 // Window control buttons
 if (btnClose) btnClose.addEventListener('click', () => {
-    widgetAPI.closeWindow();
+    void widgetAPI.tryCloseWindow();
 });
 
 if (btnMinimizeDot) btnMinimizeDot.addEventListener('click', () => {

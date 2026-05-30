@@ -10,7 +10,9 @@ let tray: Tray | null = null;
 let isQuitting = false;
 let currentLanguage = 'pt-BR';
 
-const mainTranslations: Record<string, Record<string, any>> = {
+const FORCE_SHUTDOWN_DELAY_MS = 5000;
+
+const mainTranslations: Record<string, Record<string, string | string[]>> = {
     'pt-BR': {
         trayShow: 'Mostrar',
         trayCancel: 'Cancelar Desligamento',
@@ -19,16 +21,16 @@ const mainTranslations: Record<string, Record<string, any>> = {
         trayTooltipDefault: 'Shutdown Timer',
         notificationTitle: 'Shutdown Timer',
         notificationBody: 'O computador será desligado em {seconds} segundos!',
-        dialogCloseTitle: 'Timer em andamento',
-        dialogCloseMessage: 'Um desligamento está agendado. O que deseja fazer?',
-        dialogCloseDetail: 'Se você sair, o desligamento será cancelado.',
-        dialogCloseButtons: ['Minimizar', 'Parar Timer e Sair'],
+        dialogQuitWhileTimerTitle: 'Cancelar desligamento',
+        dialogQuitWhileTimerMessage:
+            'Se você fechar a aplicação, o desligamento será cancelado. Prosseguir?',
+        dialogQuitWhileTimerButtons: ['Prosseguir', 'Não fechar'],
         dialogPendingTitle: 'Desligamento Pendente',
         dialogPendingMessage: 'Um desligamento foi agendado em uma sessão anterior. O que deseja fazer?',
         dialogPendingButtons: ['Manter Agendamento', 'Cancelar Desligamento'],
-        errorMinTime: 'O tempo mínimo é de 10 segundos.'
+        errorMinTime: 'O tempo mínimo é de 10 segundos.',
     },
-    'en': {
+    en: {
         trayShow: 'Show',
         trayCancel: 'Cancel Shutdown',
         trayQuit: 'Quit',
@@ -36,16 +38,16 @@ const mainTranslations: Record<string, Record<string, any>> = {
         trayTooltipDefault: 'Shutdown Timer',
         notificationTitle: 'Shutdown Timer',
         notificationBody: 'The computer will be turned off in {seconds} seconds!',
-        dialogCloseTitle: 'Timer in progress',
-        dialogCloseMessage: 'A shutdown is scheduled. What do you want to do?',
-        dialogCloseDetail: 'If you quit, the shutdown will be canceled.',
-        dialogCloseButtons: ['Minimize', 'Stop Timer and Quit'],
+        dialogQuitWhileTimerTitle: 'Cancel shutdown',
+        dialogQuitWhileTimerMessage:
+            'If you close the application, the scheduled shutdown will be cancelled. Proceed?',
+        dialogQuitWhileTimerButtons: ['Proceed', 'Do not close'],
         dialogPendingTitle: 'Pending Shutdown',
         dialogPendingMessage: 'A shutdown was scheduled in a previous session. What do you want to do?',
         dialogPendingButtons: ['Keep Scheduled', 'Cancel Shutdown'],
-        errorMinTime: 'The minimum time is 10 seconds.'
+        errorMinTime: 'The minimum time is 10 seconds.',
     },
-    'es': {
+    es: {
         trayShow: 'Mostrar',
         trayCancel: 'Cancelar Apagado',
         trayQuit: 'Salir',
@@ -53,83 +55,163 @@ const mainTranslations: Record<string, Record<string, any>> = {
         trayTooltipDefault: 'Shutdown Timer',
         notificationTitle: 'Shutdown Timer',
         notificationBody: '¡La computadora se apagará en {seconds} segundos!',
-        dialogCloseTitle: 'Temporizador en curso',
-        dialogCloseMessage: 'Se ha programado un apagado. ¿Qué desea hacer?',
-        dialogCloseDetail: 'Si sale, se cancelará el apagado.',
-        dialogCloseButtons: ['Minimizar', 'Detener Temporizador y Salir'],
+        dialogQuitWhileTimerTitle: 'Cancelar apagado',
+        dialogQuitWhileTimerMessage:
+            'Si cierra la aplicación, se cancelará el apagado programado. ¿Continuar?',
+        dialogQuitWhileTimerButtons: ['Continuar', 'No cerrar'],
         dialogPendingTitle: 'Apagado Pendiente',
         dialogPendingMessage: 'Se programó un apagado en una sesión anterior. ¿Qué desea hacer?',
         dialogPendingButtons: ['Mantener Programación', 'Cancelar Apagado'],
-        errorMinTime: 'El tiempo mínimo es de 10 segundos.'
-    }
+        errorMinTime: 'El tiempo mínimo es de 10 segundos.',
+    },
 };
 
-function createTray() {
-    if (tray) return;
-    
-    let iconPath = path.join(__dirname, '..', 'assets', 'icon.png');
-    let icon = nativeImage.createFromPath(iconPath);
-    if (icon.isEmpty()) {
-        iconPath = path.join(__dirname, '..', '..', 'assets', 'icon.png');
-        icon = nativeImage.createFromPath(iconPath);
+function getTranslations() {
+    return mainTranslations[currentLanguage] || mainTranslations['pt-BR'];
+}
+
+function loadTrayIcon(): Electron.NativeImage {
+    const candidatePaths = [
+        path.join(__dirname, '..', 'assets', 'icon.png'),
+        path.join(__dirname, '..', '..', 'assets', 'icon.png'),
+        path.join(process.resourcesPath, 'assets', 'icon.png'),
+    ];
+
+    for (const candidatePath of candidatePaths) {
+        const icon = nativeImage.createFromPath(candidatePath);
+        if (!icon.isEmpty()) {
+            return icon.resize({ width: 16, height: 16 });
+        }
     }
-    if (icon.isEmpty()) {
-        icon = nativeImage.createEmpty();
-    } else {
-        // Redimensionar ícone para não ficar gigante na barra superior (macOS/Windows)
-        icon = icon.resize({ width: 16, height: 16 });
+
+    console.error('[Main] Tray icon not found. Paths tried:', candidatePaths);
+    return nativeImage.createEmpty();
+}
+
+function ensureTray(): void {
+    if (tray && !tray.isDestroyed()) {
+        return;
     }
-    
+
+    const icon = loadTrayIcon();
     tray = new Tray(icon);
-    
     updateTrayMenu();
     updateTrayTooltip(timer ? timer.getState().remainingSeconds : 0);
-    
+
     tray.on('click', () => {
-        mainWindow?.show();
-        mainWindow?.restore();
-        if (tray) { tray.destroy(); tray = null; }
+        if (mainWindow && !mainWindow.isDestroyed()) {
+            mainWindow.show();
+            mainWindow.restore();
+            mainWindow.focus();
+        }
     });
 }
 
-function updateTrayMenu() {
+function destroyTray(): void {
+    if (tray && !tray.isDestroyed()) {
+        tray.destroy();
+    }
+    tray = null;
+}
+
+function updateTrayMenu(): void {
     if (!tray || tray.isDestroyed()) return;
 
-    const t = mainTranslations[currentLanguage] || mainTranslations['pt-BR'];
+    const t = getTranslations();
     const contextMenu = Menu.buildFromTemplate([
-        { label: t.trayShow, click: () => {
-            mainWindow?.show();
-            mainWindow?.restore();
-            if (tray) { tray.destroy(); tray = null; }
-        }},
-        { label: t.trayCancel, click: async () => {
-            if (timer.getState().state === 'running') {
-                timer.stop();
-            }
-            await shutdownService.cancelShutdown();
-        }},
+        {
+            label: t.trayShow as string,
+            click: () => {
+                if (mainWindow && !mainWindow.isDestroyed()) {
+                    mainWindow.show();
+                    mainWindow.restore();
+                    mainWindow.focus();
+                }
+            },
+        },
+        {
+            label: t.trayCancel as string,
+            click: async () => {
+                if (timer.getState().state === 'running') {
+                    timer.stop();
+                }
+                await shutdownService.cancelShutdown();
+            },
+        },
         { type: 'separator' },
-        { label: t.trayQuit, click: () => app.quit() }
+        {
+            label: t.trayQuit as string,
+            click: async () => {
+                const outcome = await handleUserCloseRequest(true);
+                if (outcome === 'quit') {
+                    app.quit();
+                }
+            },
+        },
     ]);
 
     tray.setContextMenu(contextMenu);
 }
 
-function updateTrayTooltip(seconds: number) {
-    if (tray && !tray.isDestroyed()) {
-        const t = mainTranslations[currentLanguage] || mainTranslations['pt-BR'];
-        if (seconds > 0) {
-            const h = Math.floor(seconds / 3600);
-            const m = Math.floor((seconds % 3600) / 60);
-            const s = seconds % 60;
-            tray.setToolTip(`${t.trayTooltipPrefix} ${h}h ${m}m ${s}s`);
-        } else {
-            tray.setToolTip(t.trayTooltipDefault);
-        }
+function updateTrayTooltip(seconds: number): void {
+    if (!tray || tray.isDestroyed()) return;
+
+    const t = getTranslations();
+    if (seconds > 0) {
+        const h = Math.floor(seconds / 3600);
+        const m = Math.floor((seconds % 3600) / 60);
+        const s = seconds % 60;
+        tray.setToolTip(`${t.trayTooltipPrefix} ${h}h ${m}m ${s}s`);
+    } else {
+        tray.setToolTip(t.trayTooltipDefault as string);
     }
 }
 
-function createWindow() {
+type CloseRequestOutcome = 'blocked' | 'quit' | 'hidden';
+
+async function handleUserCloseRequest(forceQuit = false): Promise<CloseRequestOutcome> {
+    if (!timer || timer.getState().state !== 'running') {
+        if (process.platform === 'darwin' && !forceQuit) {
+            mainWindow?.hide();
+            ensureTray();
+            return 'hidden';
+        }
+        isQuitting = true;
+        return 'quit';
+    }
+
+    const t = getTranslations();
+    const buttons = t.dialogQuitWhileTimerButtons as string[];
+    const dialogOptions = {
+        type: 'warning' as const,
+        buttons,
+        defaultId: 1,
+        cancelId: 1,
+        title: t.dialogQuitWhileTimerTitle as string,
+        message: t.dialogQuitWhileTimerMessage as string,
+    };
+    const parent =
+        mainWindow && !mainWindow.isDestroyed() ? mainWindow : BrowserWindow.getFocusedWindow();
+    const choice = parent
+        ? dialog.showMessageBoxSync(parent, dialogOptions)
+        : dialog.showMessageBoxSync(dialogOptions);
+
+    if (choice === 0) {
+        timer.stop();
+        try {
+            await shutdownService.cancelShutdown();
+        } catch (e: unknown) {
+            const message = e instanceof Error ? e.message : String(e);
+            console.error('[Main] Failed to cancel shutdown on quit:', message);
+        }
+        isQuitting = true;
+        return 'quit';
+    }
+
+    return 'blocked';
+}
+
+function createWindow(): void {
     mainWindow = new BrowserWindow({
         width: 380,
         height: 580,
@@ -152,9 +234,7 @@ function createWindow() {
 
     mainWindow.loadFile(path.join(__dirname, 'renderer', 'index.html'));
 
-    // Workaround for movable frameless window
     mainWindow.setMovable(true);
-    // Force hide traffic lights on macOS
     if (process.platform === 'darwin') {
         mainWindow.setWindowButtonVisibility(false);
     }
@@ -162,38 +242,19 @@ function createWindow() {
     mainWindow.on('close', (e) => {
         if (isQuitting) return;
 
-        if (timer && timer.getState().state === 'running') {
-            const t = mainTranslations[currentLanguage] || mainTranslations['pt-BR'];
-            const choice = dialog.showMessageBoxSync(mainWindow!, {
-                type: 'question',
-                buttons: t.dialogCloseButtons,
-                title: t.dialogCloseTitle,
-                message: t.dialogCloseMessage,
-                detail: t.dialogCloseDetail,
-                defaultId: 0,
-                cancelId: 0, // Esc ou fechar janela = Minimizar
-            });
-
-            if (choice === 0) {
-                // Minimizar
-                e.preventDefault();
-                mainWindow?.minimize();
-            } else {
-                // Parar Timer e Sair
+        e.preventDefault();
+        void (async () => {
+            const outcome = await handleUserCloseRequest();
+            if (outcome === 'quit') {
+                mainWindow?.destroy();
+                app.quit();
             }
-        }
+        })();
     });
 
     mainWindow.on('minimize', () => {
-        createTray();
+        ensureTray();
         mainWindow?.hide();
-    });
-
-    mainWindow.on('restore', () => {
-        if (tray && !tray.isDestroyed()) {
-            tray.destroy();
-            tray = null;
-        }
     });
 
     mainWindow.on('closed', () => {
@@ -201,23 +262,23 @@ function createWindow() {
     });
 }
 
-function setupTimerEvents() {
+function setupTimerEvents(): void {
     timer.on('tick', (seconds: number) => {
         updateTrayTooltip(seconds);
         if (mainWindow && !mainWindow.isDestroyed()) {
             mainWindow.webContents.send('timer-tick', seconds);
         }
 
-        // Notificação nos últimos 30 segundos (ou no início se o total configurado for menor que 30s)
-        const shouldNotify = seconds > 0 && (
-            (timer.totalSeconds >= 30 && seconds === 30) ||
-            (timer.totalSeconds < 30 && seconds === timer.totalSeconds)
-        );
+        const shouldNotify =
+            seconds > 0 &&
+            ((timer.totalSeconds >= 30 && seconds === 30) ||
+                (timer.totalSeconds < 30 && seconds === timer.totalSeconds));
+
         if (shouldNotify) {
-            const t = mainTranslations[currentLanguage] || mainTranslations['pt-BR'];
-            const notificationBody = t.notificationBody.replace('{seconds}', String(seconds));
+            const t = getTranslations();
+            const notificationBody = (t.notificationBody as string).replace('{seconds}', String(seconds));
             new Notification({
-                title: t.notificationTitle,
+                title: t.notificationTitle as string,
                 body: notificationBody,
                 urgency: 'critical',
             }).show();
@@ -234,12 +295,26 @@ function setupTimerEvents() {
         if (mainWindow && !mainWindow.isDestroyed()) {
             mainWindow.webContents.send('timer-complete');
         }
+        try {
+            console.log('[Main] Timer complete. Executing immediate shutdown...');
+            if (process.platform === 'darwin') {
+                await shutdownService.shutdownDarwinImmediately();
+            } else {
+                await shutdownService.forceShutdown(0);
+            }
+        } catch (error: unknown) {
+            const message = error instanceof Error ? error.message : String(error);
+            console.error('[Main] Failed to execute shutdown on complete:', message);
+            if (mainWindow && !mainWindow.isDestroyed()) {
+                mainWindow.webContents.send('timer-error', message);
+            }
+        }
     });
 }
 
-function setupIPCHandlers() {
+function setupIPCHandlers(): void {
     ipcMain.handle('start-timer', async (_event, seconds: number) => {
-        const t = mainTranslations[currentLanguage] || mainTranslations['pt-BR'];
+        const t = getTranslations();
         if (seconds < 10) {
             return { success: false, error: t.errorMinTime };
         }
@@ -247,8 +322,9 @@ function setupIPCHandlers() {
             await shutdownService.scheduleShutdown(seconds);
             timer.start(seconds);
             return { success: true };
-        } catch (error: any) {
-            return { success: false, error: error.message };
+        } catch (error: unknown) {
+            const message = error instanceof Error ? error.message : String(error);
+            return { success: false, error: message };
         }
     });
 
@@ -257,8 +333,9 @@ function setupIPCHandlers() {
             timer.stop();
             await shutdownService.cancelShutdown();
             return { success: true };
-        } catch (error: any) {
-            return { success: false, error: error.message };
+        } catch (error: unknown) {
+            const message = error instanceof Error ? error.message : String(error);
+            return { success: false, error: message };
         }
     });
 
@@ -270,18 +347,24 @@ function setupIPCHandlers() {
                 timer.restart();
             }
             return { success: true };
-        } catch (error: any) {
-            return { success: false, error: error.message };
+        } catch (error: unknown) {
+            const message = error instanceof Error ? error.message : String(error);
+            return { success: false, error: message };
         }
     });
 
     ipcMain.handle('force-shutdown', async () => {
         try {
+            if (mainWindow && !mainWindow.isDestroyed()) {
+                mainWindow.webContents.send('force-shutdown-pending');
+            }
+            await new Promise((resolve) => setTimeout(resolve, FORCE_SHUTDOWN_DELAY_MS));
             timer.stop();
-            await shutdownService.forceShutdown();
+            await shutdownService.forceShutdown(2000);
             return { success: true };
-        } catch (error: any) {
-            return { success: false, error: error.message };
+        } catch (error: unknown) {
+            const message = error instanceof Error ? error.message : String(error);
+            return { success: false, error: message };
         }
     });
 
@@ -289,16 +372,17 @@ function setupIPCHandlers() {
         return timer ? timer.getState() : { state: 'idle', remainingSeconds: 0, totalSeconds: 0 };
     });
 
-    ipcMain.on('minimize-window', () => {
-        if (mainWindow) {
-            mainWindow.minimize();
+    ipcMain.handle('try-close-window', async () => {
+        const outcome = await handleUserCloseRequest(false);
+        if (outcome === 'quit') {
+            mainWindow?.destroy();
+            app.quit();
         }
+        return { outcome };
     });
 
-    ipcMain.on('close-window', async () => {
-        if (mainWindow) {
-            mainWindow.close();
-        }
+    ipcMain.on('minimize-window', () => {
+        mainWindow?.minimize();
     });
 
     ipcMain.on('set-language', (_event, lang: string) => {
@@ -312,15 +396,12 @@ function setupIPCHandlers() {
     });
 }
 
-// Suprimir erros de parse de certificado do Chromium no macOS
 app.commandLine.appendSwitch('log-level', '3');
 
-// ── App Lifecycle ─────────────────────────────
 app.whenReady().then(async () => {
     timer = new TimerManager();
     shutdownService = new ShutdownService(app.getPath('userData'));
 
-    // Detecta o idioma do sistema para traduzir o diálogo inicial corretamente
     const sysLocale = app.getLocale();
     if (sysLocale.startsWith('es')) {
         currentLanguage = 'es';
@@ -334,65 +415,74 @@ app.whenReady().then(async () => {
     if (meta) {
         const remainingSeconds = Math.round((meta.endAt - Date.now()) / 1000);
         if (remainingSeconds > 10) {
-            const t = mainTranslations[currentLanguage] || mainTranslations['pt-BR'];
+            const t = getTranslations();
             const choice = dialog.showMessageBoxSync({
                 type: 'question',
-                buttons: t.dialogPendingButtons,
-                title: t.dialogPendingTitle,
-                message: t.dialogPendingMessage,
+                buttons: t.dialogPendingButtons as string[],
+                title: t.dialogPendingTitle as string,
+                message: t.dialogPendingMessage as string,
                 defaultId: 0,
-                cancelId: 0
+                cancelId: 0,
             });
 
             if (choice === 0) {
-                // Recalcula tempo restante (o usuário pode ter demorado para responder ao diálogo)
                 const actualRemaining = Math.round((meta.endAt - Date.now()) / 1000);
                 if (actualRemaining > 10) {
                     try {
                         await shutdownService.rescheduleShutdown(actualRemaining);
                         timer.start(actualRemaining);
-                    } catch (error: any) {
-                        console.error('[Main] Falha ao re-agendar timer:', error.message);
+                    } catch (error: unknown) {
+                        const message = error instanceof Error ? error.message : String(error);
+                        console.error('[Main] Failed to reschedule timer:', message);
                     }
                 } else {
-                    await shutdownService.cancelShutdown();
+                    shutdownService.clearControlFiles();
                 }
             } else {
                 await shutdownService.cancelShutdown();
             }
         } else {
-            // Se o timer já expirou ou resta menos de 10 segundos, limpa os arquivos de controle
-            await shutdownService.cancelShutdown();
+            shutdownService.clearControlFiles();
         }
     } else if (shutdownService.getStatus()) {
-        // Fallback para limpar flags antigas inconsistentes
-        await shutdownService.cancelShutdown();
+        shutdownService.clearControlFiles();
     }
 
     setupTimerEvents();
     setupIPCHandlers();
+
+    if (process.platform === 'darwin') {
+        ensureTray();
+    }
+
     createWindow();
 });
 
 app.on('window-all-closed', () => {
-    app.quit();
+    if (process.platform !== 'darwin') {
+        app.quit();
+    }
 });
 
 app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) {
         createWindow();
+    } else if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.show();
+        mainWindow.restore();
     }
 });
 
-app.on('before-quit', async () => {
+app.on('before-quit', (e) => {
+    if (!isQuitting && timer && timer.getState().state === 'running') {
+        e.preventDefault();
+        void handleUserCloseRequest(true).then((outcome) => {
+            if (outcome === 'quit') {
+                app.quit();
+            }
+        });
+        return;
+    }
     isQuitting = true;
-    if (timer && timer.getState().state === 'running') {
-        timer.stop();
-        try {
-            await shutdownService.cancelShutdown();
-        } catch (e: any) {
-            console.error('Erro ao limpar shutdown:', e.message);
-        }
-    }
+    destroyTray();
 });
-

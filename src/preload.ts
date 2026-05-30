@@ -1,20 +1,16 @@
 import { contextBridge, ipcRenderer, IpcRendererEvent } from 'electron';
 
 contextBridge.exposeInMainWorld('timerAPI', {
-    // Timer controls
     startTimer: (seconds: number) => ipcRenderer.invoke('start-timer', seconds),
     stopTimer: () => ipcRenderer.invoke('stop-timer'),
     restartTimer: () => ipcRenderer.invoke('restart-timer'),
     getTimerState: () => ipcRenderer.invoke('get-timer-state'),
 
-    // System controls
     forceShutdown: () => ipcRenderer.invoke('force-shutdown'),
+    tryCloseWindow: () => ipcRenderer.invoke('try-close-window'),
 
-    // Window controls
     minimizeWindow: () => ipcRenderer.send('minimize-window'),
-    closeWindow: () => ipcRenderer.send('close-window'),
 
-    // Listeners
     onTick: (callback: (seconds: number) => void) => {
         ipcRenderer.on('timer-tick', (_event: IpcRendererEvent, seconds: number) => callback(seconds));
     },
@@ -27,15 +23,17 @@ contextBridge.exposeInMainWorld('timerAPI', {
     onError: (callback: (message: string) => void) => {
         ipcRenderer.on('timer-error', (_event: IpcRendererEvent, message: string) => callback(message));
     },
+    onForceShutdownPending: (callback: () => void) => {
+        ipcRenderer.on('force-shutdown-pending', () => callback());
+    },
 
-    // Remove listeners
     removeAllListeners: () => {
         ipcRenderer.removeAllListeners('timer-tick');
         ipcRenderer.removeAllListeners('timer-state-change');
         ipcRenderer.removeAllListeners('timer-complete');
         ipcRenderer.removeAllListeners('timer-error');
+        ipcRenderer.removeAllListeners('force-shutdown-pending');
     },
 
-    // Language sync
-    setLanguage: (lang: string) => ipcRenderer.send('set-language', lang)
+    setLanguage: (lang: string) => ipcRenderer.send('set-language', lang),
 });
