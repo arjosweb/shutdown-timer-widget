@@ -6,6 +6,7 @@
   "scripts": {
     "start": "npm run build && env ELECTRON_RUN_AS_NODE= electron .",
     "build": "tsc && tsc src/renderer/renderer.ts --target ES6 --module None --outDir out/renderer --skipLibCheck && mkdir -p out/renderer && cp renderer/*.html out/renderer/ && cp renderer/*.css out/renderer/",
+    "test": "npm run build && node --test \"out/tests/**/*.test.js\"",
     "pack:mac": "npm run build && electron-builder --mac",
     "pack:win": "npm run build && electron-builder --win",
     "pack:linux": "npm run build && electron-builder --linux",
