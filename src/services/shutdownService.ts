@@ -1,7 +1,6 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import { exec } from 'child_process';
-// @ts-ignore
 import * as sudo from 'sudo-prompt';
 
 export interface ShutdownMeta {
@@ -78,6 +77,10 @@ export class ShutdownService {
 
         if (platform === 'darwin') {
             await this.cancelDarwinSchedules();
+        } else if (platform === 'linux') {
+            await this.execSudo('/sbin/shutdown -c').catch((err: Error) => {
+                console.warn('[ShutdownService] shutdown -c failed:', err.message);
+            });
         } else if (platform === 'win32') {
             await this.execSudo('shutdown /a').catch((err: Error) => {
                 console.warn('[ShutdownService] shutdown /a failed:', err.message);
@@ -121,9 +124,9 @@ export class ShutdownService {
     }
 
     /**
-     * Forces shutdown after a short delay.
+     * Forces shutdown immediately.
      */
-    async forceShutdown(delayMs: number = 5000): Promise<boolean> {
+    async forceShutdown(): Promise<boolean> {
         const platform = process.platform;
 
         if (platform === 'darwin') {
@@ -194,6 +197,7 @@ export class ShutdownService {
 
     private async scheduleDarwinShutdown(endAtMs: number): Promise<void> {
         const pmsetDate = this.formatPmsetScheduleDate(endAtMs);
+        // Keeps current behavior, but this also clears other system power schedules.
         const command = `/usr/bin/pmset schedule cancelall ; /usr/bin/pmset schedule shutdown "${pmsetDate}"`;
         console.log(`[ShutdownService] pmset schedule (unified): ${command} (endAt=${endAtMs})`);
         await this.execSudo(command);

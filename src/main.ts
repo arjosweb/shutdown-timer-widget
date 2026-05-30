@@ -1,14 +1,18 @@
 import { app, BrowserWindow, ipcMain, Notification, dialog, Tray, Menu, nativeImage } from 'electron';
 import * as path from 'path';
+import * as fs from 'fs';
 import { TimerManager } from './services/timerManager';
 import { ShutdownService } from './services/shutdownService';
+import { validateTimerSeconds } from './services/timerValidation';
 
 let mainWindow: BrowserWindow | null = null;
 let timer: TimerManager;
 let shutdownService: ShutdownService;
 let tray: Tray | null = null;
 let isQuitting = false;
+let isHandlingCloseRequest = false;
 let currentLanguage = 'pt-BR';
+let languagePreferencePath: string;
 
 const FORCE_SHUTDOWN_DELAY_MS = 5000;
 
@@ -28,7 +32,14 @@ const mainTranslations: Record<string, Record<string, string | string[]>> = {
         dialogPendingTitle: 'Desligamento Pendente',
         dialogPendingMessage: 'Um desligamento foi agendado em uma sessão anterior. O que deseja fazer?',
         dialogPendingButtons: ['Manter Agendamento', 'Cancelar Desligamento'],
+        dialogRestoreFailedTitle: 'Falha ao restaurar',
+        dialogRestoreFailedMessage:
+            'Não foi possível restaurar o desligamento pendente. O agendamento anterior foi limpo.',
         errorMinTime: 'O tempo mínimo é de 10 segundos.',
+        errorLinuxMinTime: 'No Linux, o tempo mínimo é de 60 segundos.',
+        errorInvalidTime: 'Tempo inválido.',
+        errorMaxTime: 'O tempo máximo é de 7 dias.',
+        errorNoTimerToRestart: 'Nenhum timer ativo para reiniciar.',
     },
     en: {
         trayShow: 'Show',
@@ -45,7 +56,14 @@ const mainTranslations: Record<string, Record<string, string | string[]>> = {
         dialogPendingTitle: 'Pending Shutdown',
         dialogPendingMessage: 'A shutdown was scheduled in a previous session. What do you want to do?',
         dialogPendingButtons: ['Keep Scheduled', 'Cancel Shutdown'],
+        dialogRestoreFailedTitle: 'Restore failed',
+        dialogRestoreFailedMessage:
+            'Failed to restore the pending shutdown. The previous schedule was cleared.',
         errorMinTime: 'The minimum time is 10 seconds.',
+        errorLinuxMinTime: 'On Linux, the minimum time is 60 seconds.',
+        errorInvalidTime: 'Invalid time value.',
+        errorMaxTime: 'The maximum time is 7 days.',
+        errorNoTimerToRestart: 'No timer available to restart.',
     },
     es: {
         trayShow: 'Mostrar',
@@ -62,12 +80,60 @@ const mainTranslations: Record<string, Record<string, string | string[]>> = {
         dialogPendingTitle: 'Apagado Pendiente',
         dialogPendingMessage: 'Se programó un apagado en una sesión anterior. ¿Qué desea hacer?',
         dialogPendingButtons: ['Mantener Programación', 'Cancelar Apagado'],
+        dialogRestoreFailedTitle: 'Error al restaurar',
+        dialogRestoreFailedMessage:
+            'No se pudo restaurar el apagado pendiente. Se limpió la programación anterior.',
         errorMinTime: 'El tiempo mínimo es de 10 segundos.',
+        errorLinuxMinTime: 'En Linux, el tiempo mínimo es de 60 segundos.',
+        errorInvalidTime: 'Tiempo inválido.',
+        errorMaxTime: 'El tiempo máximo es de 7 días.',
+        errorNoTimerToRestart: 'No hay temporizador para reiniciar.',
     },
 };
 
 function getTranslations() {
     return mainTranslations[currentLanguage] || mainTranslations['pt-BR'];
+}
+
+function getTimerValidationMessage(seconds: number): string | null {
+    const t = getTranslations();
+    const validation = validateTimerSeconds(seconds, process.platform);
+    if (validation.ok || !validation.errorKey) {
+        return null;
+    }
+    return (t[validation.errorKey] as string) || (t.errorInvalidTime as string);
+}
+
+function persistLanguage(lang: string): void {
+    try {
+        fs.writeFileSync(languagePreferencePath, lang, 'utf8');
+    } catch (error: unknown) {
+        const message = error instanceof Error ? error.message : String(error);
+        console.warn('[Main] Failed to persist language preference:', message);
+    }
+}
+
+function detectInitialLanguage(): string {
+    try {
+        if (fs.existsSync(languagePreferencePath)) {
+            const persisted = fs.readFileSync(languagePreferencePath, 'utf8').trim();
+            if (mainTranslations[persisted]) {
+                return persisted;
+            }
+        }
+    } catch (error: unknown) {
+        const message = error instanceof Error ? error.message : String(error);
+        console.warn('[Main] Failed to read language preference:', message);
+    }
+
+    const sysLocale = app.getLocale();
+    if (sysLocale.startsWith('es')) {
+        return 'es';
+    }
+    if (sysLocale.startsWith('en')) {
+        return 'en';
+    }
+    return 'pt-BR';
 }
 
 function loadTrayIcon(): Electron.NativeImage {
@@ -170,45 +236,54 @@ function updateTrayTooltip(seconds: number): void {
 type CloseRequestOutcome = 'blocked' | 'quit' | 'hidden';
 
 async function handleUserCloseRequest(forceQuit = false): Promise<CloseRequestOutcome> {
-    if (!timer || timer.getState().state !== 'running') {
-        if (process.platform === 'darwin' && !forceQuit) {
-            mainWindow?.hide();
-            ensureTray();
-            return 'hidden';
-        }
-        isQuitting = true;
-        return 'quit';
+    if (isHandlingCloseRequest) {
+        return 'blocked';
     }
+    isHandlingCloseRequest = true;
 
-    const t = getTranslations();
-    const buttons = t.dialogQuitWhileTimerButtons as string[];
-    const dialogOptions = {
-        type: 'warning' as const,
-        buttons,
-        defaultId: 1,
-        cancelId: 1,
-        title: t.dialogQuitWhileTimerTitle as string,
-        message: t.dialogQuitWhileTimerMessage as string,
-    };
-    const parent =
-        mainWindow && !mainWindow.isDestroyed() ? mainWindow : BrowserWindow.getFocusedWindow();
-    const choice = parent
-        ? dialog.showMessageBoxSync(parent, dialogOptions)
-        : dialog.showMessageBoxSync(dialogOptions);
-
-    if (choice === 0) {
-        timer.stop();
-        try {
-            await shutdownService.cancelShutdown();
-        } catch (e: unknown) {
-            const message = e instanceof Error ? e.message : String(e);
-            console.error('[Main] Failed to cancel shutdown on quit:', message);
+    try {
+        if (!timer || timer.getState().state !== 'running') {
+            if (process.platform === 'darwin' && !forceQuit) {
+                mainWindow?.hide();
+                ensureTray();
+                return 'hidden';
+            }
+            isQuitting = true;
+            return 'quit';
         }
-        isQuitting = true;
-        return 'quit';
-    }
 
-    return 'blocked';
+        const t = getTranslations();
+        const buttons = t.dialogQuitWhileTimerButtons as string[];
+        const dialogOptions = {
+            type: 'warning' as const,
+            buttons,
+            defaultId: 1,
+            cancelId: 1,
+            title: t.dialogQuitWhileTimerTitle as string,
+            message: t.dialogQuitWhileTimerMessage as string,
+        };
+        const parent =
+            mainWindow && !mainWindow.isDestroyed() ? mainWindow : BrowserWindow.getFocusedWindow();
+        const choice = parent
+            ? dialog.showMessageBoxSync(parent, dialogOptions)
+            : dialog.showMessageBoxSync(dialogOptions);
+
+        if (choice === 0) {
+            timer.stop();
+            try {
+                await shutdownService.cancelShutdown();
+            } catch (e: unknown) {
+                const message = e instanceof Error ? e.message : String(e);
+                console.error('[Main] Failed to cancel shutdown on quit:', message);
+            }
+            isQuitting = true;
+            return 'quit';
+        }
+
+        return 'blocked';
+    } finally {
+        isHandlingCloseRequest = false;
+    }
 }
 
 function createWindow(): void {
@@ -295,13 +370,15 @@ function setupTimerEvents(): void {
         if (mainWindow && !mainWindow.isDestroyed()) {
             mainWindow.webContents.send('timer-complete');
         }
+
+        if (process.platform === 'darwin') {
+            console.log('[Main] Timer complete on macOS. Waiting for scheduled pmset shutdown.');
+            return;
+        }
+
         try {
             console.log('[Main] Timer complete. Executing immediate shutdown...');
-            if (process.platform === 'darwin') {
-                await shutdownService.shutdownDarwinImmediately();
-            } else {
-                await shutdownService.forceShutdown(0);
-            }
+            await shutdownService.forceShutdown();
         } catch (error: unknown) {
             const message = error instanceof Error ? error.message : String(error);
             console.error('[Main] Failed to execute shutdown on complete:', message);
@@ -314,9 +391,9 @@ function setupTimerEvents(): void {
 
 function setupIPCHandlers(): void {
     ipcMain.handle('start-timer', async (_event, seconds: number) => {
-        const t = getTranslations();
-        if (seconds < 10) {
-            return { success: false, error: t.errorMinTime };
+        const validationError = getTimerValidationMessage(seconds);
+        if (validationError) {
+            return { success: false, error: validationError };
         }
         try {
             await shutdownService.scheduleShutdown(seconds);
@@ -342,10 +419,17 @@ function setupIPCHandlers(): void {
     ipcMain.handle('restart-timer', async () => {
         try {
             const totalSeconds = timer.totalSeconds;
-            if (totalSeconds > 0) {
-                await shutdownService.rescheduleShutdown(totalSeconds);
-                timer.restart();
+            if (totalSeconds <= 0) {
+                return { success: false, error: getTranslations().errorNoTimerToRestart };
             }
+
+            const validationError = getTimerValidationMessage(totalSeconds);
+            if (validationError) {
+                return { success: false, error: validationError };
+            }
+
+            await shutdownService.rescheduleShutdown(totalSeconds);
+            timer.restart();
             return { success: true };
         } catch (error: unknown) {
             const message = error instanceof Error ? error.message : String(error);
@@ -360,7 +444,7 @@ function setupIPCHandlers(): void {
             }
             await new Promise((resolve) => setTimeout(resolve, FORCE_SHUTDOWN_DELAY_MS));
             timer.stop();
-            await shutdownService.forceShutdown(2000);
+            await shutdownService.forceShutdown();
             return { success: true };
         } catch (error: unknown) {
             const message = error instanceof Error ? error.message : String(error);
@@ -388,6 +472,7 @@ function setupIPCHandlers(): void {
     ipcMain.on('set-language', (_event, lang: string) => {
         if (mainTranslations[lang]) {
             currentLanguage = lang;
+            persistLanguage(lang);
             updateTrayMenu();
             if (timer) {
                 updateTrayTooltip(timer.getState().remainingSeconds);
@@ -401,20 +486,15 @@ app.commandLine.appendSwitch('log-level', '3');
 app.whenReady().then(async () => {
     timer = new TimerManager();
     shutdownService = new ShutdownService(app.getPath('userData'));
+    languagePreferencePath = path.join(app.getPath('userData'), '.language_pref');
 
-    const sysLocale = app.getLocale();
-    if (sysLocale.startsWith('es')) {
-        currentLanguage = 'es';
-    } else if (sysLocale.startsWith('en')) {
-        currentLanguage = 'en';
-    } else {
-        currentLanguage = 'pt-BR';
-    }
+    currentLanguage = detectInitialLanguage();
 
     const meta = shutdownService.getMeta();
     if (meta) {
         const remainingSeconds = Math.round((meta.endAt - Date.now()) / 1000);
-        if (remainingSeconds > 10) {
+        const initialValidationError = getTimerValidationMessage(remainingSeconds);
+        if (!initialValidationError) {
             const t = getTranslations();
             const choice = dialog.showMessageBoxSync({
                 type: 'question',
@@ -427,13 +507,24 @@ app.whenReady().then(async () => {
 
             if (choice === 0) {
                 const actualRemaining = Math.round((meta.endAt - Date.now()) / 1000);
-                if (actualRemaining > 10) {
+                const restoreValidationError = getTimerValidationMessage(actualRemaining);
+                if (!restoreValidationError) {
                     try {
                         await shutdownService.rescheduleShutdown(actualRemaining);
                         timer.start(actualRemaining);
                     } catch (error: unknown) {
                         const message = error instanceof Error ? error.message : String(error);
                         console.error('[Main] Failed to reschedule timer:', message);
+                        shutdownService.clearControlFiles();
+                        const currentTranslations = getTranslations();
+                        dialog.showMessageBoxSync({
+                            type: 'warning',
+                            buttons: ['OK'],
+                            defaultId: 0,
+                            cancelId: 0,
+                            title: currentTranslations.dialogRestoreFailedTitle as string,
+                            message: `${currentTranslations.dialogRestoreFailedMessage as string}\n${message}`,
+                        });
                     }
                 } else {
                     shutdownService.clearControlFiles();
