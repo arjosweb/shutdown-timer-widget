@@ -61,12 +61,18 @@ trap '' SIGHUP
 # Salva o PID do script para permitir encerramento se necessário
 echo $$ > "${pidPath}"
 
+# Agenda desligamento no hardware (pmset) para garantir que
+# o Mac desligue mesmo que este script falhe ou seja interrompido
+SHUTDOWN_DATE=$(date -j -v +${seconds}S +"%m/%d/%y %H:%M:%S")
+/usr/sbin/pmset schedule shutdown "\${SHUTDOWN_DATE}" 2>/dev/null
+
 # Inicia o caffeinate para impedir o repouso do sistema durante a contagem
 /usr/bin/caffeinate -dis -t ${seconds} &
 CAFF_PID=$!
 
 # Função de limpeza executada ao encerrar o script
 cleanup() {
+    /usr/sbin/pmset schedule cancelall 2>/dev/null
     kill $CAFF_PID >/dev/null 2>&1
     rm -f "${pidPath}"
     rm -f "$0"
@@ -99,11 +105,14 @@ if [ -f "${this.flagPath}" ] && [ "$(cat "${this.flagPath}")" = "${sessionId}" ]
 
     if [ "$(uname)" = "Darwin" ]; then
         trap '' SIGTERM SIGHUP SIGINT
-        
+
+        # Cancela o pmset para evitar duplicidade (nós vamos desligar manualmente)
+        /usr/sbin/pmset schedule cancelall 2>/dev/null
+
         # Tentativa de desligamento amigável via GUI
         GUI_USER=$(stat -f '%Su' /dev/console)
         sudo -u $GUI_USER osascript -e 'tell app "System Events" to shut down'
-        
+
         # Tolerância de 10 segundos antes do desligamento bruto
         sleep 10
         /sbin/shutdown -h now
