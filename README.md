@@ -106,6 +106,10 @@ Observações:
   ```bash
   bash ./scripts/build-release-zips.sh --no-build
   ```
+- Para uso local (quando existir artefato apenas de uma plataforma), permita ausência dos demais:
+  ```bash
+  bash ./scripts/build-release-zips.sh --no-build --allow-missing
+  ```
 
 ## Estrutura do Projeto
 

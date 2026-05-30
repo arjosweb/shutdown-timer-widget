@@ -2,9 +2,19 @@
 set -euo pipefail
 
 NO_BUILD="false"
-if [[ "${1:-}" == "--no-build" ]]; then
-  NO_BUILD="true"
-fi
+ALLOW_MISSING="false"
+
+for arg in "$@"; do
+  if [[ "${arg}" == "--no-build" ]]; then
+    NO_BUILD="true"
+  elif [[ "${arg}" == "--allow-missing" ]]; then
+    ALLOW_MISSING="true"
+  else
+    echo "[release:zip] ERROR: unsupported argument '${arg}'" >&2
+    echo "[release:zip] Supported args: --no-build --allow-missing" >&2
+    exit 1
+  fi
+done
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
@@ -56,19 +66,23 @@ MAC_COUNT="$(zip_artifacts "${MACOS_DIR}" "${MAC_ARTIFACTS[@]}")"
 LINUX_COUNT="$(zip_artifacts "${LINUX_DIR}" "${LINUX_ARTIFACTS[@]}")"
 WINDOWS_COUNT="$(zip_artifacts "${WINDOWS_DIR}" "${WINDOWS_ARTIFACTS[@]}")"
 
-if [[ "${MAC_COUNT}" -eq 0 ]]; then
+if [[ "${MAC_COUNT}" -eq 0 && "${ALLOW_MISSING}" != "true" ]]; then
   echo "[release:zip] ERROR: no .dmg artifact found in ${DIST_DIR}" >&2
   exit 1
 fi
 
-if [[ "${LINUX_COUNT}" -eq 0 ]]; then
+if [[ "${LINUX_COUNT}" -eq 0 && "${ALLOW_MISSING}" != "true" ]]; then
   echo "[release:zip] ERROR: no .AppImage artifact found in ${DIST_DIR}" >&2
   exit 1
 fi
 
-if [[ "${WINDOWS_COUNT}" -eq 0 ]]; then
+if [[ "${WINDOWS_COUNT}" -eq 0 && "${ALLOW_MISSING}" != "true" ]]; then
   echo "[release:zip] ERROR: no .exe artifact found in ${DIST_DIR}" >&2
   exit 1
+fi
+
+if [[ "${ALLOW_MISSING}" == "true" ]]; then
+  echo "[release:zip] Warning: --allow-missing enabled (platforms sem artefato serão ignoradas)."
 fi
 
 echo ""
