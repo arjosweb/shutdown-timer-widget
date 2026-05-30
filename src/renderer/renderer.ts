@@ -17,6 +17,10 @@ interface TimerAPI {
     setLanguage: (lang: string) => void;
 }
 
+interface WindowWithTimerAPI extends Window {
+    timerAPI?: TimerAPI;
+}
+
 // ── Translation Dictionaries ────────────────────────
 const translations: Record<string, Record<string, string>> = {
     'pt-BR': {
@@ -36,7 +40,9 @@ const translations: Record<string, Record<string, string>> = {
         scheduled: 'Agendado',
         canceling: 'Cancelando',
         min10s: 'Mín: 10s',
+        minLinux60s: 'Linux mín: 60s',
         minTimeError: 'Tempo mínimo de 10s',
+        minLinuxTimeError: 'No Linux, tempo mínimo de 60s',
         wait: 'Aguarde...',
         error: 'Erro',
         permissionDenied: 'permissão negada',
@@ -61,7 +67,9 @@ const translations: Record<string, Record<string, string>> = {
         scheduled: 'Scheduled',
         canceling: 'Canceling',
         min10s: 'Min: 10s',
+        minLinux60s: 'Linux min: 60s',
         minTimeError: 'Minimum time of 10s',
+        minLinuxTimeError: 'On Linux, minimum time is 60s',
         wait: 'Wait...',
         error: 'Error',
         permissionDenied: 'permission denied',
@@ -86,7 +94,9 @@ const translations: Record<string, Record<string, string>> = {
         scheduled: 'Programado',
         canceling: 'Cancelando',
         min10s: 'Mín: 10s',
+        minLinux60s: 'Linux mín: 60s',
         minTimeError: 'Tiempo mínimo de 10s',
+        minLinuxTimeError: 'En Linux, el tiempo mínimo es 60s',
         wait: 'Espere...',
         error: 'Error',
         permissionDenied: 'permiso denegado',
@@ -96,14 +106,21 @@ const translations: Record<string, Record<string, string>> = {
     }
 };
 
-// Helper to access window.timerAPI safely without global augmentation
-const widgetAPI = (window as any).timerAPI as TimerAPI;
+const isLinuxRuntime = navigator.userAgent.toLowerCase().includes('linux');
+const minimumSeconds = isLinuxRuntime ? 60 : 10;
+const minimumLabelKey = isLinuxRuntime ? 'minLinux60s' : 'min10s';
+const minimumErrorKey = isLinuxRuntime ? 'minLinuxTimeError' : 'minTimeError';
 
-if (!widgetAPI) {
+const widgetWindow = window as WindowWithTimerAPI;
+
+if (!widgetWindow.timerAPI) {
     console.error('CRITICAL: timerAPI is missing in window object.');
     const userLang = navigator.language.startsWith('es') ? 'es' : (navigator.language.startsWith('en') ? 'en' : 'pt-BR');
     alert(translations[userLang]?.criticalError || translations['pt-BR'].criticalError);
+    throw new Error('timerAPI is missing in window object.');
 }
+
+const widgetAPI = widgetWindow.timerAPI;
 
 // ── DOM Elements ──────────────────────────────────
 const timerValueEl = document.getElementById('timer-value') as HTMLElement;
@@ -273,8 +290,8 @@ function updateEventPreview() {
         if (seconds > 0) {
             timerEventEl.textContent = calculateShutdownTime(seconds);
             timerValueEl.textContent = formatTime(seconds);
-            if (seconds < 10) {
-                statusBadge.textContent = translations[currentLanguage].min10s;
+            if (seconds < minimumSeconds) {
+                statusBadge.textContent = translations[currentLanguage][minimumLabelKey];
                 statusBadge.className = 'status-badge loading';
             } else {
                 statusBadge.className = 'status-badge hidden';
@@ -295,8 +312,8 @@ if (inputSeconds) inputSeconds.addEventListener('input', updateEventPreview);
 if (btnStart) btnStart.addEventListener('click', async () => {
     if (currentState === 'idle') {
         const seconds = getInputSeconds();
-        if (seconds < 10) {
-            timerEventEl.textContent = translations[currentLanguage].minTimeError;
+        if (seconds < minimumSeconds) {
+            timerEventEl.textContent = translations[currentLanguage][minimumErrorKey];
             statusBadge.textContent = translations[currentLanguage].error;
             statusBadge.className = 'status-badge error';
             setTimeout(updateEventPreview, 3000);
@@ -348,7 +365,11 @@ if (btnStart) btnStart.addEventListener('click', async () => {
 if (btnRestart) btnRestart.addEventListener('click', async () => {
     if (currentState === 'running' && totalConfiguredSeconds > 0) {
         timerEventEl.textContent = calculateShutdownTime(totalConfiguredSeconds);
-        await widgetAPI.restartTimer();
+        const result = await widgetAPI.restartTimer();
+        if (!result.success) {
+            timerEventEl.textContent = `${translations[currentLanguage].error}: ${result.error || ''}`;
+            statusBadge.className = 'status-badge error';
+        }
     }
 });
 
