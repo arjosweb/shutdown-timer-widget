@@ -8,3 +8,6 @@ dev
 out
 out/**
 .spec-protocol
+AGENTS.md
+skills
+agent

@@ -5,6 +5,7 @@ contextBridge.exposeInMainWorld('timerAPI', {
     startTimer: (seconds: number) => ipcRenderer.invoke('start-timer', seconds),
     stopTimer: () => ipcRenderer.invoke('stop-timer'),
     restartTimer: () => ipcRenderer.invoke('restart-timer'),
+    getTimerState: () => ipcRenderer.invoke('get-timer-state'),
 
     // System controls
     forceShutdown: () => ipcRenderer.invoke('force-shutdown'),

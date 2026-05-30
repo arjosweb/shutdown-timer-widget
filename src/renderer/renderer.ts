@@ -4,6 +4,7 @@ interface TimerAPI {
     startTimer: (seconds: number) => Promise<{ success: boolean; error?: string }>;
     stopTimer: () => Promise<{ success: boolean; error?: string }>;
     restartTimer: () => Promise<{ success: boolean; error?: string }>;
+    getTimerState: () => Promise<{ state: string; remainingSeconds: number; totalSeconds: number }>;
     forceShutdown: () => Promise<{ success: boolean; error?: string }>;
     minimizeWindow: () => void;
     closeWindow: () => void;
@@ -411,4 +412,21 @@ widgetAPI.onError((message: string) => {
 
 // ── Initialize ────────────────────────────────────
 applyLanguage(currentLanguage);
+
+// Sincronização inicial com o estado do timer em background
+async function syncInitialState() {
+    if (!widgetAPI) return;
+    try {
+        const state = await widgetAPI.getTimerState();
+        if (state && state.state === 'running') {
+            totalConfiguredSeconds = state.totalSeconds;
+            updateUIState('running');
+            updateTimerDisplay(state.remainingSeconds);
+            timerEventEl.textContent = calculateShutdownTime(state.remainingSeconds);
+        }
+    } catch (e) {
+        console.error('Erro ao sincronizar estado inicial:', e);
+    }
+}
+syncInitialState();
 

@@ -234,7 +234,6 @@ function setupTimerEvents() {
         if (mainWindow && !mainWindow.isDestroyed()) {
             mainWindow.webContents.send('timer-complete');
         }
-        console.log('[Main] Timer visual completo. O sistema deve desligar em breve via agendamento (screen/shutdown).');
     });
 }
 
@@ -286,6 +285,10 @@ function setupIPCHandlers() {
         }
     });
 
+    ipcMain.handle('get-timer-state', async () => {
+        return timer ? timer.getState() : { state: 'idle', remainingSeconds: 0, totalSeconds: 0 };
+    });
+
     ipcMain.on('minimize-window', () => {
         if (mainWindow) {
             mainWindow.minimize();
@@ -317,20 +320,53 @@ app.whenReady().then(async () => {
     timer = new TimerManager();
     shutdownService = new ShutdownService(app.getPath('userData'));
 
-    if (shutdownService.getStatus()) {
-        const t = mainTranslations[currentLanguage] || mainTranslations['pt-BR'];
-        const choice = dialog.showMessageBoxSync({
-            type: 'question',
-            buttons: t.dialogPendingButtons,
-            title: t.dialogPendingTitle,
-            message: t.dialogPendingMessage,
-            defaultId: 0,
-            cancelId: 0
-        });
+    // Detecta o idioma do sistema para traduzir o diálogo inicial corretamente
+    const sysLocale = app.getLocale();
+    if (sysLocale.startsWith('es')) {
+        currentLanguage = 'es';
+    } else if (sysLocale.startsWith('en')) {
+        currentLanguage = 'en';
+    } else {
+        currentLanguage = 'pt-BR';
+    }
 
-        if (choice === 1) {
+    const meta = shutdownService.getMeta();
+    if (meta) {
+        const remainingSeconds = Math.round((meta.endAt - Date.now()) / 1000);
+        if (remainingSeconds > 10) {
+            const t = mainTranslations[currentLanguage] || mainTranslations['pt-BR'];
+            const choice = dialog.showMessageBoxSync({
+                type: 'question',
+                buttons: t.dialogPendingButtons,
+                title: t.dialogPendingTitle,
+                message: t.dialogPendingMessage,
+                defaultId: 0,
+                cancelId: 0
+            });
+
+            if (choice === 0) {
+                // Recalcula tempo restante (o usuário pode ter demorado para responder ao diálogo)
+                const actualRemaining = Math.round((meta.endAt - Date.now()) / 1000);
+                if (actualRemaining > 10) {
+                    try {
+                        await shutdownService.rescheduleShutdown(actualRemaining);
+                        timer.start(actualRemaining);
+                    } catch (error: any) {
+                        console.error('[Main] Falha ao re-agendar timer:', error.message);
+                    }
+                } else {
+                    await shutdownService.cancelShutdown();
+                }
+            } else {
+                await shutdownService.cancelShutdown();
+            }
+        } else {
+            // Se o timer já expirou ou resta menos de 10 segundos, limpa os arquivos de controle
             await shutdownService.cancelShutdown();
         }
+    } else if (shutdownService.getStatus()) {
+        // Fallback para limpar flags antigas inconsistentes
+        await shutdownService.cancelShutdown();
     }
 
     setupTimerEvents();
