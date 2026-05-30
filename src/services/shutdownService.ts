@@ -36,10 +36,8 @@ export class ShutdownService {
                     fs.mkdirSync(dir, { recursive: true });
                 }
 
-                // Escreve a flag simples (ID da sessão)
                 fs.writeFileSync(this.flagPath, sessionId);
 
-                // Salva metadados ricos em JSON
                 const meta: ShutdownMeta = { sessionId, endAt, totalSeconds: seconds };
                 fs.writeFileSync(this.metaPath, JSON.stringify(meta));
 
@@ -48,104 +46,57 @@ export class ShutdownService {
                 return reject(new Error(`Falha ao criar arquivos de controle: ${e.message}`));
             }
 
-            let command = '';
-            if (platform === 'darwin' || platform === 'linux') {
-                const scriptPath = path.join(dir, 'shutdown_script.sh');
-                const pidPath = path.join(dir, '.shutdown_timer_pid');
-                
-                // Script Shell resiliente com caffeinate e loop de monitoramento a cada 5 segundos
-                const scriptContent = `#!/bin/bash
-# Desacopla do processo pai
-trap '' SIGHUP
+            if (platform === 'darwin') {
+                // Usa pmset schedule como fallback nativo do macOS.
+                // O shutdown real é disparado pelo evento 'complete' do TimerManager.
+                const shutdownDate = new Date(endAt);
+                const mm = String(shutdownDate.getMonth() + 1).padStart(2, '0');
+                const dd = String(shutdownDate.getDate()).padStart(2, '0');
+                const yy = String(shutdownDate.getFullYear()).slice(-2);
+                const HH = String(shutdownDate.getHours()).padStart(2, '0');
+                const MM = String(shutdownDate.getMinutes()).padStart(2, '0');
+                const SS = String(shutdownDate.getSeconds()).padStart(2, '0');
+                const pmsetDate = `${mm}/${dd}/${yy} ${HH}:${MM}:${SS}`;
 
-# Salva o PID do script para permitir encerramento se necessário
-echo $$ > "${pidPath}"
+                const command = `/usr/bin/pmset schedule shutdown "${pmsetDate}"`;
+                console.log(`[ShutdownService] Agendando pmset fallback: ${command}`);
 
-# Agenda desligamento no hardware (pmset) para garantir que
-# o Mac desligue mesmo que este script falhe ou seja interrompido
-SHUTDOWN_DATE=$(date -j -v +${seconds}S +"%m/%d/%y %H:%M:%S")
-/usr/sbin/pmset schedule shutdown "\${SHUTDOWN_DATE}" 2>/dev/null
-
-# Inicia o caffeinate para impedir o repouso do sistema durante a contagem
-/usr/bin/caffeinate -dis -t ${seconds} &
-CAFF_PID=$!
-
-# Função de limpeza executada ao encerrar o script
-cleanup() {
-    /usr/sbin/pmset schedule cancelall 2>/dev/null
-    kill $CAFF_PID >/dev/null 2>&1
-    rm -f "${pidPath}"
-    rm -f "$0"
-}
-trap cleanup EXIT INT TERM
-
-# Loop de contagem regressiva monitorada
-REMAINING=${seconds}
-INTERVAL=5
-
-while [ $REMAINING -gt 0 ]; do
-    # Se a flag sumir ou mudar de ID, aborta o desligamento e limpa tudo
-    if [ ! -f "${this.flagPath}" ] || [ "$(cat "${this.flagPath}")" != "${sessionId}" ]; then
-        exit 0
-    fi
-
-    if [ $REMAINING -le $INTERVAL ]; then
-        sleep $REMAINING
-        REMAINING=0
-    else
-        sleep $INTERVAL
-        REMAINING=$((REMAINING - INTERVAL))
-    fi
-done
-
-# Verificação final de integridade da sessão antes de desligar
-if [ -f "${this.flagPath}" ] && [ "$(cat "${this.flagPath}")" = "${sessionId}" ]; then
-    rm -f "${this.flagPath}"
-    rm -f "${this.metaPath}"
-
-    if [ "$(uname)" = "Darwin" ]; then
-        trap '' SIGTERM SIGHUP SIGINT
-
-        # Cancela o pmset para evitar duplicidade (nós vamos desligar manualmente)
-        /usr/sbin/pmset schedule cancelall 2>/dev/null
-
-        # Tentativa de desligamento amigável via GUI
-        GUI_USER=$(stat -f '%Su' /dev/console)
-        sudo -u $GUI_USER osascript -e 'tell app "System Events" to shut down'
-
-        # Tolerância de 10 segundos antes do desligamento bruto
-        sleep 10
-        /sbin/shutdown -h now
-    else
-        /sbin/shutdown -h now
-    fi
-fi
-`;
-                try {
-                    fs.writeFileSync(scriptPath, scriptContent);
-                    fs.chmodSync(scriptPath, '755');
-                } catch (e: any) {
-                    return reject(new Error(`Falha ao criar script de shutdown: ${e.message}`));
-                }
-
-                command = `/usr/bin/nohup "${scriptPath}" > /dev/null 2>&1 &`;
+                sudo.exec(command, this.options, (error: any) => {
+                    if (error) {
+                        // pmset falhou (não fatal — o timer do Electron ainda dispara o shutdown)
+                        console.warn('[ShutdownService] pmset schedule falhou (não fatal):', error.message || error);
+                    }
+                    resolve(true);
+                });
             } else if (platform === 'win32') {
-                command = `shutdown /s /t ${seconds}`;
+                const command = `shutdown /s /t ${seconds}`;
+                console.log(`[ShutdownService] Executando comando (${platform}): ${command}`);
+
+                sudo.exec(command, this.options, (error: any) => {
+                    if (error) {
+                        console.error('[ShutdownService] ERRO sudo.exec:', error);
+                        this.clearControlFilesSync(sessionId);
+                        reject(new Error(error.message || error.toString()));
+                        return;
+                    }
+                    resolve(true);
+                });
+            } else if (platform === 'linux') {
+                const command = `/sbin/shutdown -h +${Math.ceil(seconds / 60)}`;
+                console.log(`[ShutdownService] Executando comando (${platform}): ${command}`);
+
+                sudo.exec(command, this.options, (error: any) => {
+                    if (error) {
+                        console.error('[ShutdownService] ERRO sudo.exec:', error);
+                        this.clearControlFilesSync(sessionId);
+                        reject(new Error(error.message || error.toString()));
+                        return;
+                    }
+                    resolve(true);
+                });
             } else {
                 return reject(new Error(`Plataforma não suportada: ${platform}`));
             }
-
-            console.log(`[ShutdownService] Executando comando (${platform}): ${command}`);
-
-            sudo.exec(command, this.options, (error: any) => {
-                if (error) {
-                    console.error('[ShutdownService] ERRO sudo.exec:', error);
-                    this.clearControlFilesSync(sessionId);
-                    reject(new Error(error.message || error.toString()));
-                    return;
-                }
-                resolve(true);
-            });
         });
     }
 
@@ -167,6 +118,14 @@ fi
             }
         } catch (e: any) {
             console.warn('[ShutdownService] Erro ao remover arquivos de controle:', e.message);
+        }
+
+        if (platform === 'darwin') {
+            return new Promise((resolve) => {
+                sudo.exec('/usr/bin/pmset schedule cancelall', this.options, () => {
+                    resolve(true);
+                });
+            });
         }
 
         if (platform === 'win32') {
