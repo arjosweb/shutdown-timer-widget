@@ -11,7 +11,8 @@
     "pack:win": "npm run build && electron-builder --win",
     "pack:linux": "npm run build && electron-builder --linux",
     "pack:all": "npm run build && electron-builder --mac --win --linux",
-    "release:zip": "bash ./scripts/build-release-zips.sh"
+    "release:zip": "bash ./scripts/build-release-zips.sh",
+    "install:mac:print": "printf '%s\\n' '/bin/bash -c \"$(curl -fsSL https://raw.githubusercontent.com/arjosweb/shutdown-timer-widget/main/scripts/install-macos.sh)\"'"
   },
   "build": {
     "appId": "com.shutdown-timer.widget",

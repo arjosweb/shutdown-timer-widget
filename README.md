@@ -32,6 +32,24 @@ Um widget timer flutuante, elegante e minimalista para macOS, Windows e Linux, d
 
 ## Instalação
 
+### macOS beta unsigned
+
+Este build ainda não é assinado/notarizado pela Apple. Para instalar via Terminal:
+
+```bash
+/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/arjosweb/shutdown-timer-widget/main/scripts/install-macos.sh)"
+```
+
+Alternativa para quem já tem `wget` instalado:
+
+```bash
+wget -qO- https://raw.githubusercontent.com/arjosweb/shutdown-timer-widget/main/scripts/install-macos.sh | /bin/bash
+```
+
+O script baixa `downloads/macos/v-1.0.2.zip`, extrai o DMG, instala o app em `~/Applications`, remove a quarentena local e abre o app.
+
+### Desenvolvimento
+
 1. Clone o repositório:
    ```bash
    git clone https://github.com/arjosweb/shutdown-timer-widget.git
