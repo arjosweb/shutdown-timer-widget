@@ -48,6 +48,16 @@ wget -qO- https://raw.githubusercontent.com/arjosweb/shutdown-timer-widget/main/
 
 O script baixa `downloads/macos/v-1.0.2.zip`, extrai o DMG, instala o app em `~/Applications`, remove a quarentena local e abre o app.
 
+Para desinstalar o app instalado por esse script:
+
+1. Feche o **Shutdown Timer**, se ele estiver aberto.
+2. Abra o **Finder**.
+3. No menu superior, clique em **Ir > Ir para a Pasta...**.
+4. Digite `~/Applications` e pressione **Enter**.
+5. Encontre **Shutdown Timer.app**.
+6. Arraste o app para o **Lixo**.
+7. Esvazie o **Lixo**, se quiser remover definitivamente.
+
 ### Desenvolvimento
 
 1. Clone o repositório:
