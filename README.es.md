@@ -150,8 +150,7 @@ Notas:
 
 ## Desarrollado por
 
-**Artur Medeiros (ARJOS Tech)**
-- **Correo electrónico**: [contato@arjos.com.br](mailto:contato@arjos.com.br)
+**ARJOS Tecnologia**
 - **GitHub**: [arjosweb](https://github.com/arjosweb)
 
 Este proyecto es **código abierto** bajo la licencia [MIT](LICENSE).
