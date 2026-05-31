@@ -7,6 +7,7 @@ An elegant and minimalist floating timer widget for macOS, Windows, and Linux, d
 - [English](README.en.md)
 - [Español](README.es.md)
 
+
 [![GitHub Repository](https://img.shields.io/badge/GitHub-Repository-blue?style=flat-square&logo=github)](https://github.com/arjosweb/shutdown-timer-widget)
 ![Electron](https://img.shields.io/badge/Electron-47848F?style=flat-square&logo=electron&logoColor=white)
 ![TypeScript](https://img.shields.io/badge/TypeScript-007ACC?style=flat-square&logo=typescript&logoColor=white)
@@ -30,6 +31,34 @@ An elegant and minimalist floating timer widget for macOS, Windows, and Linux, d
 - Node.js installed.
 
 ## Installation
+
+### macOS beta unsigned
+
+This build is not yet signed/notarized by Apple. To install via Terminal:
+
+```bash
+/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/arjosweb/shutdown-timer-widget/main/scripts/install-macos.sh)"
+```
+
+Alternative for those who already have `wget` installed:
+
+```bash
+wget -qO- https://raw.githubusercontent.com/arjosweb/shutdown-timer-widget/main/scripts/install-macos.sh | /bin/bash
+```
+
+The script downloads `downloads/macos/v-1.0.2.zip`, extracts the DMG, installs the app in `~/Applications`, removes local quarantine, and opens the app.
+
+To uninstall the app installed by this script:
+
+1. Close **Shutdown Timer** if it is open.
+2. Open **Finder**.
+3. In the top menu, click **Go > Go to Folder...**.
+4. Type `~/Applications` and press **Enter**.
+5. Locate **Shutdown Timer.app**.
+6. Drag the app to **Trash**.
+7. Empty the **Trash** if you want to permanently remove it.
+
+### Development
 
 1. Clone the repository:
    ```bash
@@ -72,6 +101,43 @@ To generate distribution versions for different platforms:
   ```
 
 The generated files will be in the `dist/` folder.
+
+## Generate Zip Releases
+
+To generate macOS, Linux, and Windows builds and organize the zip files by platform:
+
+```bash
+npm run release:zip
+```
+
+The script runs:
+- multi-platform build (`npm run pack:all`);
+- filter artifacts in `dist/` (`.dmg`, `.AppImage`, `.exe`);
+- create one `.zip` per artifact;
+- final organization in `downloads/`.
+
+Expected output structure:
+
+```text
+downloads/
+  macos/
+    <file>.dmg.zip
+  linux/
+    <file>.AppImage.zip
+  windows/
+    <file>.exe.zip
+```
+
+Notes:
+- On macOS, generating Windows/Linux artifacts may require additional cross-build toolchain.
+- If you already have artifacts in `dist/` and only want to zip without rebuilding, run:
+  ```bash
+  bash ./scripts/build-release-zips.sh --no-build
+  ```
+- For local use (when only one platform's artifact exists), allow the absence of the others:
+  ```bash
+  bash ./scripts/build-release-zips.sh --no-build --allow-missing
+  ```
 
 ## Project Structure
 

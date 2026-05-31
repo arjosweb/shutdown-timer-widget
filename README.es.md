@@ -7,6 +7,7 @@ Un widget de temporizador flotante, elegante y minimalista para macOS, Windows y
 - [English](README.en.md)
 - [Español](README.es.md)
 
+
 [![GitHub Repository](https://img.shields.io/badge/GitHub-Repository-blue?style=flat-square&logo=github)](https://github.com/arjosweb/shutdown-timer-widget)
 ![Electron](https://img.shields.io/badge/Electron-47848F?style=flat-square&logo=electron&logoColor=white)
 ![TypeScript](https://img.shields.io/badge/TypeScript-007ACC?style=flat-square&logo=typescript&logoColor=white)
@@ -30,6 +31,34 @@ Un widget de temporizador flotante, elegante y minimalista para macOS, Windows y
 - Node.js instalado.
 
 ## Instalación
+
+### macOS beta sin firmar
+
+Esta compilación aún no está firmada/notarizada por Apple. Para instalar vía Terminal:
+
+```bash
+/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/arjosweb/shutdown-timer-widget/main/scripts/install-macos.sh)"
+```
+
+Alternativa para quienes ya tienen `wget` instalado:
+
+```bash
+wget -qO- https://raw.githubusercontent.com/arjosweb/shutdown-timer-widget/main/scripts/install-macos.sh | /bin/bash
+```
+
+El script descarga `downloads/macos/v-1.0.2.zip`, extrae el DMG, instala la app en `~/Applications`, elimina la cuarentena local y abre la app.
+
+Para desinstalar la app instalada por este script:
+
+1. Cierre **Shutdown Timer** si está abierto.
+2. Abra **Finder**.
+3. En el menú superior, haga clic en **Ir > Ir a la Carpeta...**.
+4. Escriba `~/Applications` y presione **Enter**.
+5. Busque **Shutdown Timer.app**.
+6. Arrastre la app a la **Papelera**.
+7. Vacíe la **Papelera** si desea eliminar definitivamente.
+
+### Desarrollo
 
 1. Clone el repositorio:
    ```bash
@@ -72,6 +101,43 @@ Para generar las versiones de distribución para diferentes plataformas:
   ```
 
 Los archivos generados estarán en la carpeta `dist/`.
+
+## Generar lanzamientos comprimidos (ZIP)
+
+Para generar builds de macOS, Linux y Windows y organizar los archivos zip por plataforma:
+
+```bash
+npm run release:zip
+```
+
+El script ejecuta:
+- build multiplataforma (`npm run pack:all`);
+- filtro de artefactos en `dist/` (`.dmg`, `.AppImage`, `.exe`);
+- creación de un `.zip` por artefacto;
+- organización final en `downloads/`.
+
+Estructura de salida esperada:
+
+```text
+downloads/
+  macos/
+    <archivo>.dmg.zip
+  linux/
+    <archivo>.AppImage.zip
+  windows/
+    <archivo>.exe.zip
+```
+
+Notas:
+- En macOS, generar artefactos de Windows/Linux puede depender de toolchain adicional de cross-build.
+- Si ya tiene artefactos en `dist/` y solo desea comprimir sin rebuild, ejecute:
+  ```bash
+  bash ./scripts/build-release-zips.sh --no-build
+  ```
+- Para uso local (cuando exista artefacto de una sola plataforma), permita la ausencia de los demás:
+  ```bash
+  bash ./scripts/build-release-zips.sh --no-build --allow-missing
+  ```
 
 ## Estructura del proyecto
 
